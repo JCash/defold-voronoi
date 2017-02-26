@@ -1,6 +1,7 @@
 [project]
-title = My project
+title = Voronoi
 version = 0.1
+dependencies = https://github.com/andsve/dirtylarry/archive/master.zip
 
 [bootstrap]
 main_collection = /main/main.collectionc
@@ -9,12 +10,24 @@ main_collection = /main/main.collectionc
 game_binding = /input/game.input_bindingc
 
 [display]
-width = 1280
-height = 720
+width = 800
+height = 600
 
 [physics]
 scale = 0.02
 
 [script]
 shared_state = 1
+
+[library]
+include_dirs = voronoi
+
+[osx]
+bundle_identifier = com.jcash.voronoi
+
+[android]
+package = com.jcash.voronoi
+
+[ios]
+bundle_identifier = com.jcash.voronoi
 
