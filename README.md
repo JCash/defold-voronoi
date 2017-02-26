@@ -2,7 +2,15 @@
 
 A small extension for Defold to add 2D voronoi functionality
 
-Uses the C/C++ library [jc_voronoi](https://github.com/JCash/voronoi)
+Uses the C/C++ library [jc_voronoi](https://github.com/JCash/voronoi) which
+is a fast C implementation for creating 2D Voronoi diagrams from a point set.
+
+Uses [Fortune's sweep algorithm.](https://en.wikipedia.org/wiki/Fortune%27s_algorithm)
+
+Screenshot:
+
+![50 points](main/images/screenshot.png)
+
 
 # Lua API
 
