@@ -7,6 +7,8 @@ is a fast C implementation for creating 2D Voronoi diagrams from a point set.
 
 Uses [Fortune's sweep algorithm.](https://en.wikipedia.org/wiki/Fortune%27s_algorithm)
 
+Tested on iOS, OSX and Windows (should work fine on Android too)
+
 Screenshot:
 
 ![50 points](main/images/screenshot.png)

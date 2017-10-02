@@ -1,7 +1,9 @@
 #include <assert.h>
 #include <stdlib.h>
 #include <stdio.h>
+#if !defined(DM_PLATFORM_WINDOWS)
 #include <unistd.h>
+#endif
 
 #define EXTENSION_NAME Voronoi
 #define LIB_NAME "Voronoi"
@@ -81,7 +83,7 @@ static int Generate(lua_State* L)
     int num_sites = 0;
     if(lua_istable(L, 2))
     {
-        num_sites = lua_objlen(L, 2) / 2;
+        num_sites = (int)lua_objlen(L, 2) / 2;
     }   
     /*
     else if(dmScript::IsBuffer(L, 2))
@@ -119,7 +121,10 @@ static int Generate(lua_State* L)
     }
 
     memset(&ctx->m_Diagram, 0, sizeof(jcv_diagram));
-    jcv_diagram_generate(ctx->m_NumPoints, ctx->m_Points, ctx->m_Width, ctx->m_Height, &ctx->m_Diagram );
+
+	jcv_rect rect = {0, 0, ctx->m_Width, ctx->m_Height};
+	jcv_diagram_generate(ctx->m_NumPoints, ctx->m_Points, &rect, &ctx->m_Diagram);
+    //jcv_diagram_generate(ctx->m_NumPoints, ctx->m_Points, ctx->m_Width, ctx->m_Height, &ctx->m_Diagram );
 
     return 0;
 }
@@ -166,7 +171,7 @@ static int GetSite(lua_State* L)
     int index = luaL_checkint(L, 2);
     if(index < 1 || index >= ctx->m_Diagram.numsites+1)
     {
-        return luaL_error(L, "Index '%d' out of range [1, %d)", ctx->m_Diagram.numsites+1);
+        return luaL_error(L, "Index '%d' out of range [1, %d)", index, ctx->m_Diagram.numsites+1);
     }
     index--;
 
@@ -273,7 +278,7 @@ static int GetDebugImage(lua_State* L)
             {dmHashString64("rgb"), dmBuffer::VALUE_TYPE_UINT8, 3},
         };
 
-        dmBuffer::Result r = dmBuffer::Allocate(ctx->m_Width*ctx->m_Height, streams_decl, 1, &ctx->m_Buffer);
+        dmBuffer::Result r = dmBuffer::Create(ctx->m_Width*ctx->m_Height, streams_decl, 1, &ctx->m_Buffer);
         if (r != dmBuffer::RESULT_OK)
         {
             lua_pushnil(L);
@@ -281,7 +286,8 @@ static int GetDebugImage(lua_State* L)
         }
 
         // Increase ref count
-        dmScript::PushBuffer(L, ctx->m_Buffer);
+		dmScript::LuaHBuffer luabuf = { ctx->m_Buffer, true };
+		dmScript::PushBuffer(L, luabuf);
         ctx->m_BufferRef = dmScript::Ref(L, LUA_REGISTRYINDEX);
     }
 
