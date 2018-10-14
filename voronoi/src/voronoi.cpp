@@ -122,7 +122,7 @@ static int Generate(lua_State* L)
 
     memset(&ctx->m_Diagram, 0, sizeof(jcv_diagram));
 
-	jcv_rect rect = {0, 0, ctx->m_Width, ctx->m_Height};
+    jcv_rect rect = {(jcv_real)0, (jcv_real)0, (jcv_real)ctx->m_Width, (jcv_real)ctx->m_Height};
 	jcv_diagram_generate(ctx->m_NumPoints, ctx->m_Points, &rect, &ctx->m_Diagram);
     //jcv_diagram_generate(ctx->m_NumPoints, ctx->m_Points, ctx->m_Width, ctx->m_Height, &ctx->m_Diagram );
 
