@@ -51,7 +51,7 @@ static int Create(lua_State* L)
     ctx->m_Height = height;
 
     lua_pushlightuserdata(L, ctx);
-    return 1;   
+    return 1;
 }
 
 static int Destroy(lua_State* L)
@@ -83,7 +83,7 @@ static int Generate(lua_State* L)
     if(lua_istable(L, 2))
     {
         num_sites = (int)lua_objlen(L, 2) / 2;
-    }   
+    }
     /*
     else if(dmScript::IsBuffer(L, 2))
     {
@@ -160,24 +160,10 @@ static int Relax(lua_State* L)
     return 0;
 }
 
-static int GetSite(lua_State* L)
+static int PushRegion(lua_State* L, const jcv_site* site)
 {
-    DM_LUA_STACK_CHECK(L, 1);
-
-    VoronoiContext* ctx = CheckVoronoiDiagram(L, 1);
-
-    int index = luaL_checkint(L, 2);
-    if(index < 1 || index >= ctx->m_Diagram.numsites+1)
-    {
-        return luaL_error(L, "Index '%d' out of range [1, %d)", index, ctx->m_Diagram.numsites+1);
-    }
-    index--;
-
-    const jcv_site* sites = jcv_diagram_get_sites( &ctx->m_Diagram );
-    const jcv_site* site = &sites[index];
-
     lua_newtable(L);
-    
+
     lua_pushnumber(L, site->p.x);
     lua_setfield(L, -2, "x");
     lua_pushnumber(L, site->p.y);
@@ -210,7 +196,7 @@ static int GetSite(lua_State* L)
         }
 
         area += e->pos[0].x * e->pos[1].y - e->pos[0].y * e->pos[1].x;
-        
+
         lua_pushinteger(L, e->neighbor ? e->neighbor->index+1 : 0);
         lua_setfield(L, -2, "neighbor");
 
@@ -223,6 +209,44 @@ static int GetSite(lua_State* L)
 
     lua_pushnumber(L, area * 0.5f);
     lua_setfield(L, -2, "area");
+
+    return 1;
+}
+
+static int GetRegion(lua_State* L)
+{
+    DM_LUA_STACK_CHECK(L, 1);
+
+    VoronoiContext* ctx = CheckVoronoiDiagram(L, 1);
+
+    int index = luaL_checkint(L, 2);
+    if(index < 1 || index >= ctx->m_Diagram.numsites+1)
+    {
+        return luaL_error(L, "Index '%d' out of range [1, %d)", index, ctx->m_Diagram.numsites+1);
+    }
+    index--;
+
+    const jcv_site* sites = jcv_diagram_get_sites( &ctx->m_Diagram );
+    const jcv_site* site = &sites[index];
+
+    PushRegion(L, site);
+    return 1;
+}
+
+static int GetRegions(lua_State* L)
+{
+    DM_LUA_STACK_CHECK(L, 1);
+
+    VoronoiContext* ctx = CheckVoronoiDiagram(L, 1);
+
+    lua_newtable(L);
+
+    const jcv_site* sites = jcv_diagram_get_sites( &ctx->m_Diagram );
+    for( int i = 0; i < ctx->m_Diagram.numsites; ++i )
+    {
+        PushRegion(L, &sites[i]);
+        lua_rawseti(L, -2, i+1);
+    }
 
     return 1;
 }
@@ -251,12 +275,12 @@ static void DrawCells(const jcv_diagram* diagram, uint8_t* image, int width, int
     }
 }
 
-static int GetNumSites(lua_State* L)
+static int GetNumRegions(lua_State* L)
 {
     DM_LUA_STACK_CHECK(L, 1);
     VoronoiContext* ctx = (VoronoiContext*)lua_touserdata(L, 1);
     lua_pushinteger(L, ctx->m_NumPoints);
-    return 1;   
+    return 1;
 }
 
 static int GetDebugImage(lua_State* L)
@@ -304,9 +328,11 @@ static const luaL_reg Module_methods[] =
     {"create", Create},
     {"destroy", Destroy},
     {"generate", Generate},
+
     //{"relax", Relax},
-    {"get_num_sites", GetNumSites},
-    {"get_site", GetSite},
+    {"get_regions", GetRegions},
+    {"get_num_regions", GetNumRegions},
+    {"get_region", GetRegion},
     {"get_debug_image", GetDebugImage},
     {0, 0}
 };
