@@ -10,7 +10,6 @@
 #define LUA_MODULE_NAME "voronoi"
 
 // Defold SDK
-#define DLIB_LOG_DOMAIN LIB_NAME
 #include <dmsdk/sdk.h>
 
 #define JC_VORONOI_IMPLEMENTATION
@@ -286,8 +285,8 @@ static int GetDebugImage(lua_State* L)
         }
 
         // Increase ref count
-		dmScript::LuaHBuffer luabuf = { ctx->m_Buffer, true };
-		dmScript::PushBuffer(L, luabuf);
+        dmScript::LuaHBuffer luabuf(ctx->m_Buffer, dmScript::OWNER_C);
+        dmScript::PushBuffer(L, luabuf);
         ctx->m_BufferRef = dmScript::Ref(L, LUA_REGISTRYINDEX);
     }
 
