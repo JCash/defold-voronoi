@@ -1,43 +1,109 @@
-# Simple workflow for deploying static content to GitHub Pages
-name: Deploy static content to Pages
+name: Build and deploy HTML5 to Pages
 
 on:
-  # Runs on pushes targeting the default branch
   push:
-    branches: ["master"]
-
-  # Allows you to run this workflow manually from the Actions tab
+    branches:
+      - master
   workflow_dispatch:
 
-# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
 permissions:
   contents: read
   pages: write
   id-token: write
 
-# Allow only one concurrent deployment, skipping runs queued between the run in-progress and latest queued.
-# However, do NOT cancel in-progress runs as we want to allow these production deployments to complete.
 concurrency:
-  group: "pages"
+  group: pages
   cancel-in-progress: false
 
 jobs:
-  # Single deploy job since we're just deploying
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Resolve latest stable Defold release
+        id: defold
+        run: |
+          stable_info="$(curl --fail --location --silent --show-error \
+            https://d.defold.com/stable/info.json)"
+          version="$(jq --exit-status --raw-output '.version' <<< "${stable_info}")"
+          sha1="$(jq --exit-status --raw-output '.sha1' <<< "${stable_info}")"
+
+          [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "${sha1}" =~ ^[0-9a-f]{40}$ ]]
+
+          {
+            echo "version=${version}"
+            echo "sha1=${sha1}"
+          } >> "${GITHUB_OUTPUT}"
+          echo "Using Defold ${version} (${sha1})"
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Restore Defold builder from cache
+        id: bob-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: bob.jar
+          key: bob-jar-stable-${{ steps.defold.outputs.sha1 }}
+          enableCrossOsArchive: true
+
+      - name: Download Defold builder
+        if: steps.bob-cache.outputs.cache-hit != 'true'
+        env:
+          DEFOLD_SHA1: ${{ steps.defold.outputs.sha1 }}
+        run: |
+          curl --fail --location --retry 3 \
+            --output bob.jar \
+            "https://d.defold.com/archive/stable/${DEFOLD_SHA1}/bob/bob.jar"
+
+      - name: Save Defold builder to cache
+        if: steps.bob-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        continue-on-error: true
+        with:
+          path: bob.jar
+          key: bob-jar-stable-${{ steps.defold.outputs.sha1 }}
+          enableCrossOsArchive: true
+
+      - name: Verify Defold builder version
+        env:
+          DEFOLD_SHA1: ${{ steps.defold.outputs.sha1 }}
+        run: |
+          bob_info="$(java -jar bob.jar --version)"
+          echo "${bob_info}"
+          grep --fixed-strings "sha1: ${DEFOLD_SHA1}" <<< "${bob_info}"
+
+      - name: Bundle HTML5 application
+        run: |
+          java -jar bob.jar \
+            --platform wasm-web \
+            --architectures wasm-web \
+            --variant release \
+            --archive \
+            --bundle-output dist/html5 \
+            resolve distclean build bundle
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload HTML5 bundle
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist/html5/Voronoi
+
   deploy:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
+    needs: build
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          # Upload entire repository
-          path: '.'
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5

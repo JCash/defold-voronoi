@@ -2,6 +2,8 @@
 
 A small extension for Defold to add 2D voronoi functionality
 
+[Try the bundled HTML5 demo.](https://jcash.github.io/defold-voronoi/)
+
 Uses the C/C++ library [jc_voronoi](https://github.com/JCash/voronoi) which
 is a fast C implementation for creating 2D Voronoi diagrams from a point set.
 The bundled header is jc_voronoi 0.10.0.
