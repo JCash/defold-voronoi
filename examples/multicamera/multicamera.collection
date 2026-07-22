@@ -20,14 +20,17 @@ instances {
   position { x: 320.0 y: 300.0 z: 10.0 }
 }
 instances {
-  id: "player_label_1"
-  prototype: "/examples/multicamera/player_label.go"
+  id: "player_1"
+  prototype: "/examples/multicamera/player_1.go"
+  position { x: 180.0 y: 300.0 }
 }
 instances {
-  id: "player_label_2"
-  prototype: "/examples/multicamera/player_label.go"
+  id: "player_2"
+  prototype: "/examples/multicamera/player_2.go"
+  position { x: 480.0 y: 300.0 }
 }
 instances {
-  id: "player_label_3"
-  prototype: "/examples/multicamera/player_label.go"
+  id: "player_3"
+  prototype: "/examples/multicamera/player_3.go"
+  position { x: 320.0 y: 300.0 }
 }

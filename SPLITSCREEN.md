@@ -24,11 +24,11 @@ topology swap occurs at the end of the animation. Internal dividers fade as the
 views become identical, making each group appear as one shared camera region.
 
 Each cell is converted into a dynamic triangle-fan mesh, written into the
-stencil buffer, then the shared world—including every player—is rendered through
-that group camera inside the stencil. Players are also rendered in a final
-unclipped owner-camera pass, so an actor crossing a split remains intact while
-the per-camera world views stay stencil-clipped. The visible dividers are a
-dynamic mesh built from the same cell edges as the stencil masks.
+stencil buffer, then the shared environment is rendered through that group
+camera inside the stencil. Players are rendered once in a final unclipped
+owner-camera pass, so actors remain intact at split lines without duplicate
+copies from the per-camera passes. The visible dividers are a dynamic mesh built
+from the same cell edges as the stencil masks.
 
 Move P1 with WASD, the arrow keys, or by dragging the cyan player. The camera
 passes use `/render/voronoi.render_script`; the mask meshes and world mesh are in
@@ -64,9 +64,9 @@ The reference render script uses these tags:
 | View 1 mask | `voronoi_mask_1` |
 | View 2 mask | `voronoi_mask_2` |
 | View 3 mask | `voronoi_mask_3` |
-| Optional owner actor 1 | `voronoi_actor_1` |
-| Optional owner actor 2 | `voronoi_actor_2` |
-| Optional owner actor 3 | `voronoi_actor_3` |
+| Optional owner player 1 | `voronoi_player_1` |
+| Optional owner player 2 | `voronoi_player_2` |
+| Optional owner player 3 | `voronoi_player_3` |
 | Divider overlay | `voronoi_divider` |
 
 Tag the materials used by the world you want to render through every camera
@@ -110,20 +110,21 @@ self.mask_preds = {
 }
 ```
 
-The example also gives every player a unique actor predicate:
+The example gives every player a unique owner predicate:
 
 ```lua
-self.actor_preds = {
-    render.predicate({ "voronoi_actor_1" }),
-    render.predicate({ "voronoi_actor_2" }),
-    render.predicate({ "voronoi_actor_3" }),
+self.player_preds = {
+    render.predicate({ "voronoi_player_1" }),
+    render.predicate({ "voronoi_player_2" }),
+    render.predicate({ "voronoi_player_3" }),
 }
 ```
 
-These actor predicates are optional. They allow the render script to draw all
-actors inside every camera cell and then draw each actor once more, without a
-stencil, through its owning camera. That final owner pass prevents a player from
-being cut in half when crossing a split line.
+These predicates are optional. In the example, each one matches both the actor
+mesh and label material on a single player game object. The render script keeps
+them out of the stencil-clipped world passes and draws the complete player once,
+without a stencil, through its owning camera. This keeps the label attached to
+the actor and prevents both duplicates and players being cut at split lines.
 
 ## 3. Receive camera lifecycle messages
 
@@ -178,7 +179,9 @@ local function write_cell_stencil(mask_pred, screen_projection)
 end
 ```
 
-Before writing each cell, clear only `BUFFER_TYPE_STENCIL_BIT`. Do not clear the
+Before writing each cell, restore the stencil write mask and clear only
+`BUFFER_TYPE_STENCIL_BIT`. WebGL applies the current write mask to stencil
+clears, and the previous camera pass leaves writes disabled. Do not clear the
 color buffer between cameras.
 
 ## 5. Render one camera through one cell
@@ -188,6 +191,7 @@ the camera, and draw the world:
 
 ```lua
 local function draw_camera_cell(self, camera_url, mask_pred, screen_projection)
+    render.set_stencil_mask(0xff)
     render.clear({ [graphics.BUFFER_TYPE_STENCIL_BIT] = 0 })
     write_cell_stencil(mask_pred, screen_projection)
 
@@ -201,11 +205,6 @@ local function draw_camera_cell(self, camera_url, mask_pred, screen_projection)
     render.set_camera(camera_url, { use_frustum = true })
     render.draw(self.world_pred)
 
-    -- Optional: actors visible from every camera.
-    for _, actor_pred in ipairs(self.actor_preds or {}) do
-        render.draw(actor_pred)
-    end
-
     render.set_camera()
     render.disable_state(graphics.STATE_STENCIL_TEST)
 end
@@ -213,7 +212,9 @@ end
 
 Draw any predicates that belong inside a camera cell here. This may include
 tiles, particles, models, or labels. Apply their normal depth, culling, and blend
-states exactly as you would in your existing world pass.
+states exactly as you would in your existing world pass. Do not also draw actors
+here when using the owner-camera pass below, or visible cells can contain a
+second copy of the same actor.
 
 ## 6. Integrate the passes into `update(self)`
 
@@ -246,13 +247,14 @@ else
 end
 ```
 
-If you use owner actor passes, render them after all stencil-clipped cells:
+If you use owner actor passes, render each actor once after all stencil-clipped
+cells:
 
 ```lua
 render.disable_state(graphics.STATE_STENCIL_TEST)
-for i, actor_pred in ipairs(self.actor_preds) do
+for i, player_pred in ipairs(self.player_preds) do
     render.set_camera(self.cameras[i], { use_frustum = true })
-    render.draw(actor_pred)
+    render.draw(player_pred)
 end
 render.set_camera()
 ```
@@ -293,10 +295,24 @@ controller
 camera_1
 camera_2
 camera_3
+
+player_1
+├── actor
+└── label
+
+player_2
+├── actor
+└── label
+
+player_3
+├── actor
+└── label
 ```
 
-If you use the optional owner passes, also add one uniquely tagged actor mesh
-per player. Dynamic actor meshes must also use independent buffers.
+If you use the optional owner passes, add one player game object per camera.
+Give its actor and label materials the same unique owner tag, keep the actor
+geometry in local space, and position the label component with a local offset.
+Dynamic actor meshes must also use independent buffers.
 
 ## 8. Create and update the Lua controller
 
@@ -403,8 +419,8 @@ To add more views:
 1. Add another independent mask buffer, mesh, and uniquely tagged material.
 2. Append its predicate to `self.mask_preds`.
 3. Add the camera URL field to the `set_voronoi_cameras` message handler.
-4. If using owner passes, add another uniquely tagged actor predicate and
-   independent actor buffer.
+4. If using owner passes, add another player game object, uniquely tagged owner
+   predicate, local-offset label, and independent actor buffer.
 5. Supply the additional site, path, URL, mask resource, and divider color to
    `split_screen.create()` and `split_screen.update()`.
 
@@ -420,6 +436,10 @@ To add more views:
   stencil and ensure the world predicate matches the world materials.
 - **Only the last cell is visible:** clear only the stencil buffer between
   camera passes, not the color buffer.
+- **HTML5 looks unstencilled:** call `render.set_stencil_mask(0xff)` before every
+  per-camera stencil clear. WebGL applies the active write mask to that clear.
+- **Players appear twice:** do not draw owner actors in both the
+  stencil-clipped camera passes and the final owner-camera pass.
 - **GUI is clipped:** disable stencil testing or use `COMPARE_FUNC_ALWAYS`
   before the GUI pass, and clear the active render camera.
 - **Merge thresholds flicker:** keep `split_distance` larger than

@@ -47,6 +47,9 @@ local function write_cell_stencil(self, mask_pred)
 end
 
 local function draw_camera_cell(self, camera_url, mask_pred)
+    -- Stencil clears are affected by the current write mask on WebGL. The
+    -- previous camera pass disables stencil writes, so restore them first.
+    render.set_stencil_mask(0xff)
     render.clear({ [graphics.BUFFER_TYPE_STENCIL_BIT] = 0 })
     write_cell_stencil(self, mask_pred)
 
@@ -55,9 +58,6 @@ local function draw_camera_cell(self, camera_url, mask_pred)
     render.set_stencil_op(graphics.STENCIL_OP_KEEP, graphics.STENCIL_OP_KEEP, graphics.STENCIL_OP_KEEP)
     render.set_camera(camera_url, { use_frustum = true })
     render.draw(self.world_pred)
-    for _, actor_pred in ipairs(self.actor_preds) do
-        render.draw(actor_pred)
-    end
     render.enable_state(graphics.STATE_BLEND)
     render.draw(self.tile_pred)
     render.disable_state(graphics.STATE_BLEND)
@@ -65,11 +65,11 @@ local function draw_camera_cell(self, camera_url, mask_pred)
     render.disable_state(graphics.STATE_STENCIL_TEST)
 end
 
-local function draw_owner_actors(self)
+local function draw_owner_players(self)
     render.disable_state(graphics.STATE_STENCIL_TEST)
-    for i, actor_pred in ipairs(self.actor_preds) do
+    for i, player_pred in ipairs(self.player_preds) do
         render.set_camera(self.cameras[i], { use_frustum = true })
-        render.draw(actor_pred)
+        render.draw(player_pred)
     end
     render.set_camera()
 end
@@ -87,10 +87,10 @@ function init(self)
     self.debug_text_pred = render.predicate({ "debug_text" })
     self.world_pred = render.predicate({ "voronoi_world" })
     self.divider_pred = render.predicate({ "voronoi_divider" })
-    self.actor_preds = {
-        render.predicate({ "voronoi_actor_1" }),
-        render.predicate({ "voronoi_actor_2" }),
-        render.predicate({ "voronoi_actor_3" }),
+    self.player_preds = {
+        render.predicate({ "voronoi_player_1" }),
+        render.predicate({ "voronoi_player_2" }),
+        render.predicate({ "voronoi_player_3" }),
     }
     self.mask_preds = {
         render.predicate({ "voronoi_mask_1" }),
@@ -120,7 +120,7 @@ function update(self)
         for i = 1, self.camera_count do
             draw_camera_cell(self, self.cameras[i], self.mask_preds[i])
         end
-        draw_owner_actors(self)
+        draw_owner_players(self)
     else
         draw_default_world(self)
     end

@@ -7,18 +7,6 @@ components {
   component: "/examples/multicamera/world.mesh"
 }
 components {
-  id: "actor_1"
-  component: "/examples/multicamera/actor_1.mesh"
-}
-components {
-  id: "actor_2"
-  component: "/examples/multicamera/actor_2.mesh"
-}
-components {
-  id: "actor_3"
-  component: "/examples/multicamera/actor_3.mesh"
-}
-components {
   id: "divider"
   component: "/examples/multicamera/divider.mesh"
 }

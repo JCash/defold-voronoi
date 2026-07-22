@@ -1,5 +1,5 @@
-name: "voronoi_actor_1"
-tags: "voronoi_actor_1"
+name: "voronoi_player_1"
+tags: "voronoi_player_1"
 vertex_program: "/examples/multicamera/world.vp"
 fragment_program: "/examples/multicamera/world.fp"
 vertex_space: VERTEX_SPACE_LOCAL

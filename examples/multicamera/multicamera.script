@@ -84,14 +84,15 @@ local function make_world_buffer()
     return make_colored_buffer(vertices, colors, { -300, -300, -1, 1100, 900, 1 })
 end
 
-local function make_actor_buffer(site, color)
+local function make_actor_buffer(color)
     local vertices = {}
     local colors = {}
-    add_circle(vertices, colors, site, 22, color)
-    add_circle(vertices, colors, site, 8, vmath.vector4(1, 1, 1, 1))
+    local origin = vmath.vector3()
+    add_circle(vertices, colors, origin, 22, color)
+    add_circle(vertices, colors, origin, 8, vmath.vector4(1, 1, 1, 1))
     return make_colored_buffer(vertices, colors, {
-        site.x - 22, site.y - 22, -1,
-        site.x + 22, site.y + 22, 1,
+        -22, -22, -1,
+        22, 22, 1,
     })
 end
 
@@ -114,15 +115,15 @@ local function update_human(self, dt)
     self.sites[1].y = math.max(35, math.min(HEIGHT - 35, self.sites[1].y))
 end
 
-local function update_example_meshes(self)
-    for i, site in ipairs(self.sites) do
-        resource.set_buffer(self.actor_resources[i], make_actor_buffer(site, PLAYER_COLORS[i]))
+local function initialize_player_meshes(self)
+    for i, actor_resource in ipairs(self.actor_resources) do
+        resource.set_buffer(actor_resource, make_actor_buffer(PLAYER_COLORS[i]))
     end
 end
 
-local function update_player_labels(self)
+local function update_player_transforms(self)
     for i, site in ipairs(self.sites) do
-        go.set_position(vmath.vector3(site.x + 27, site.y + 18, 0.9), self.label_paths[i])
+        go.set_position(site, self.player_paths[i])
     end
 end
 
@@ -154,11 +155,11 @@ function init(self)
         vmath.vector3(320, 300, 0),
     }
     self.actor_resources = {
-        go.get("#actor_1", "vertices"),
-        go.get("#actor_2", "vertices"),
-        go.get("#actor_3", "vertices"),
+        go.get("/player_1#actor", "vertices"),
+        go.get("/player_2#actor", "vertices"),
+        go.get("/player_3#actor", "vertices"),
     }
-    self.label_paths = { "/player_label_1", "/player_label_2", "/player_label_3" }
+    self.player_paths = { "/player_1", "/player_2", "/player_3" }
     local camera_paths = { "/camera_1", "/camera_2", "/camera_3" }
     self.split_screen = voronoi_split_screen.create({
         width = WIDTH,
@@ -184,13 +185,9 @@ function init(self)
     })
 
     resource.set_buffer(go.get("#world", "vertices"), make_world_buffer())
-    update_example_meshes(self)
+    initialize_player_meshes(self)
+    update_player_transforms(self)
     voronoi_split_screen.update(self.split_screen, self.sites, 0, true)
-    update_player_labels(self)
-
-    label.set_text("/player_label_1#label", "P1 HUMAN")
-    label.set_text("/player_label_2#label", "P2 NPC")
-    label.set_text("/player_label_3#label", "P3 NPC")
     if automation_bridge then
         automation_bridge.annotate("main:/controller#world", {
             automation_id = "voronoi_camera_world",
@@ -214,9 +211,8 @@ function update(self, dt)
     self.sites[3].x = 450 + math.cos(-angle + 0.7) * 145
     self.sites[3].y = 300 + math.sin(-angle + 0.7) * 145
 
-    update_example_meshes(self)
+    update_player_transforms(self)
     voronoi_split_screen.update(self.split_screen, self.sites, dt, false)
-    update_player_labels(self)
     publish_state(self)
 end
 
