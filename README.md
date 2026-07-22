@@ -4,19 +4,51 @@ A small extension for Defold to add 2D voronoi functionality
 
 Uses the C/C++ library [jc_voronoi](https://github.com/JCash/voronoi) which
 is a fast C implementation for creating 2D Voronoi diagrams from a point set.
+The bundled header is jc_voronoi 0.10.0.
+Native extensions depending on this library can include the exported header
+with `#include <jc_voronoi.h>`.
 
 Uses [Fortune's sweep algorithm.](https://en.wikipedia.org/wiki/Fortune%27s_algorithm)
 
 Tested on iOS, OSX and Windows (should work fine on Android too)
 
-Screenshot:
+The app starts at a selection screen. Choose **Voronoi Diagram** or
+**Split Screen**; the selected collection is loaded through a collection proxy.
+Use the **Back** button in either example to unload it and return to the menu.
 
-![50 points](main/images/screenshot.png)
+In the Voronoi Diagram example, press and drag anywhere to grab the site
+belonging to the Voronoi cell under the pointer. The site remains locked to the
+pointer until release, while its immediate neighbors are displaced to keep the
+grabbed cell close to its original area. Hold Up/Down to continuously add or
+remove particles at 60 particles per second.
 
+## Examples
+
+The repository includes two focused example collections:
+
+### Voronoi Diagram
+
+`/examples/voronoi/voronoi.collection`
+
+It creates and animates a dense Voronoi
+diagram and supports cell grabbing, continuous particle-count changes, and
+grabbed-cell area preservation.
+
+![Voronoi Diagram example](docs/images/voronoi-diagram.png)
+
+### Split Screen
+
+`/examples/multicamera/multicamera.collection`
+
+![Split Screen example](docs/images/split-screen.png)
+
+See [SPLITSCREEN.md](SPLITSCREEN.md) for the example controls, implementation
+details, render-script integration guide, and further reading.
 
 # Lua API
 
 This extension adds a Lua module named `voronoi`
+and ships editor completion metadata in `/voronoi/voronoi.script_api`.
 
 ## voronoi.create(width, height)
 
@@ -36,14 +68,15 @@ The `points` variable is a table with numbers: `{ x1, y1, x2, y2, ... }`
     local points = { 1.0, 1.5, 2.3, 3.1 }
     voronoi.generate(self.diagram, points } 
 
-After generating the diagram, the results can be retrieved by `voronoi.get_site()`
+After generating the diagram, retrieve the cells with `voronoi.get_regions()`
+or `voronoi.get_region()`.
 
-## voronoi.get_num_sites(diagram)
+## voronoi.get_num_regions(diagram)
 
 Returns the number of valid sites. Note that some sites might
 have been removed since they were duplicates.
 
-## voronoi.get_site(diagram, index)
+## voronoi.get_region(diagram, index)
 
 Gets a site and it's information.
 
@@ -69,9 +102,9 @@ Note that the edges are sorted, and are always rotated counter clockwise around 
 
 Here is an example of how to iterate the generated diagram:
 
-    local num_sites = voronoi.get_num_sites(self.diagram)
-    for i=1,num_sites do
-        local site = voronoi.get_site(self.diagram, i)
+    local num_regions = voronoi.get_num_regions(self.diagram)
+    for i=1,num_regions do
+        local site = voronoi.get_region(self.diagram, i)
         for ei, edge in pairs(site.edges) do
             if edge.neighbor > 0 then
                 ...
@@ -85,9 +118,8 @@ Gets an rgb image showing the diagram. The image is a buffer with the signature 
 
     self.textureheader = {width=self.width,
                         height=self.height,
-                        type=resource.TEXTURE_TYPE_2D,
-                        format=resource.TEXTURE_FORMAT_RGB,
-                        num_mip_maps=1 }
+                        type=graphics.TEXTURE_TYPE_2D,
+                        format=graphics.TEXTURE_FORMAT_RGB }
     local path = go.get("#sprite", "texture0")
     local image = voronoi.get_debug_image(self.diagram)
     resource.set_texture(path, self.textureheader, image)

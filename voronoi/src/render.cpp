@@ -1,4 +1,4 @@
-#include "jc_voronoi.h"
+#include <jc_voronoi.h>
 
 static void plot(int x, int y, unsigned char* image, int width, int height, int nchannels, unsigned char* color)
 {

@@ -11,22 +11,60 @@ local height = 0
 
 local pixels_per_meter = 8
 
+local function add_particle()
+    local x = math.random() * width
+    local y = math.random() * height
+    particles[#particles + 1] = vmath.vector3(x, y, 0.1)
+
+    local vx = (math.random() * 2 - 1) * width * 0.05
+    local vy = (math.random() * 2 - 1) * width * 0.05
+    velocities[#velocities + 1] = vmath.vector3(vx, vy, 0)
+end
 
 function M.init_particles(_diagram, num, _width, _height)
     num_particles = num
     particles = {}
+    velocities = {}
     width = _width
     height = _height
-    
+
     for i=1,num_particles do
-        local x = math.random() * width
-        local y = math.random() * height
-        table.insert(particles, vmath.vector3(x, y, 0.1))
-        
-        local vx = (math.random() * 2 - 1) * width * 0.05
-        local vy = (math.random() * 2 - 1) * width * 0.05
-        table.insert(velocities, vmath.vector3(vx, vy, 0))
+        add_particle()
     end
+end
+
+function M.set_particle_count(count)
+    count = math.max(1, math.floor(count))
+    while num_particles < count do
+        add_particle()
+        num_particles = num_particles + 1
+    end
+    while num_particles > count do
+        particles[num_particles] = nil
+        velocities[num_particles] = nil
+        num_particles = num_particles - 1
+    end
+end
+
+function M.set_particle_position(index, x, y)
+    if not particles[index] then
+        return false
+    end
+    particles[index] = vmath.vector3(
+        math.max(0, math.min(width, x)),
+        math.max(0, math.min(height, y)),
+        0.1)
+    return true
+end
+
+function M.offset_particle(index, dx, dy)
+    local particle = particles[index]
+    if not particle then
+        return false
+    end
+    particle.x = math.max(0, math.min(width, particle.x + dx))
+    particle.y = math.max(0, math.min(height, particle.y + dy))
+    return true
 end
 
 function M.update_particles(dt)
@@ -66,4 +104,3 @@ function M.get_particles()
 end
 
 return M
-

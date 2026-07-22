@@ -7,6 +7,27 @@ local system = nil
 
 local mode = 0
 local num_particles = 500
+local MIN_PARTICLES = 1
+local PARTICLE_CHANGE_RATE = 60
+local AREA_ITERATIONS = 4
+local AREA_TOLERANCE = 0.01
+local AREA_GAIN = 0.75
+local MAX_NEIGHBOR_STEP = 20
+
+local function nearest_particle(particles, x, y)
+    local nearest_index = nil
+    local nearest_distance = math.huge
+    for i, particle in ipairs(particles) do
+        local dx = particle.x - x
+        local dy = particle.y - y
+        local distance = dx * dx + dy * dy
+        if distance < nearest_distance then
+            nearest_index = i
+            nearest_distance = distance
+        end
+    end
+    return nearest_index
+end
 
 local function init_particles(diagram, num_particles, width, height)
     if mode == 0 then
@@ -24,14 +45,123 @@ local function update_particles(self, dt)
     system.update_particles(dt)
 end
 
+local function recreate_diagram(self)
+    voronoi.destroy(self.diagram)
+    self.diagram = voronoi.create(self.width, self.height)
+    self.diagram_ready = false
+end
+
 local function get_points(particles)
-    points = {}
+    local points = {}
     for i=1,#particles do
         local p = particles[i]
         table.insert(points, p.x)
         table.insert(points, p.y)
     end
     return points
+end
+
+local function generate_diagram(self, particles)
+    voronoi.generate(self.diagram, get_points(particles))
+    self.diagram_ready = true
+end
+
+local function change_particle_count(self, delta)
+    local next_count = math.max(MIN_PARTICLES, num_particles + delta)
+    if next_count == num_particles then
+        return
+    end
+    num_particles = next_count
+    system.set_particle_count(num_particles)
+    recreate_diagram(self)
+    label.set_text("logo#num_particles", tostring(num_particles))
+    if self.dragged_particle and self.dragged_particle > num_particles then
+        self.dragged_particle = nil
+        self.grabbed_area = nil
+    end
+end
+
+local function update_particle_count_keys(self, dt)
+    local direction = (self.increase_particles and 1 or 0) - (self.decrease_particles and 1 or 0)
+    if direction == 0 then
+        self.particle_change_accumulator = 0
+        return
+    end
+
+    self.particle_change_accumulator = self.particle_change_accumulator + dt * PARTICLE_CHANGE_RATE
+    local changes = math.floor(self.particle_change_accumulator)
+    if changes > 0 then
+        self.particle_change_accumulator = self.particle_change_accumulator - changes
+        change_particle_count(self, direction * changes)
+    end
+end
+
+local function translate_grabbed_neighborhood(self, particles)
+    if not self.dragged_particle or not self.diagram_ready then
+        return
+    end
+
+    local center = particles[self.dragged_particle]
+    local dx = self.pointer_x - center.x
+    local dy = self.pointer_y - center.y
+    local region = voronoi.get_region(self.diagram, self.dragged_particle)
+    local moved = {}
+    for _, edge in ipairs(region.edges) do
+        local neighbor_index = edge.neighbor
+        if neighbor_index > 0 and not moved[neighbor_index] then
+            system.offset_particle(neighbor_index, dx, dy)
+            moved[neighbor_index] = true
+        end
+    end
+    system.set_particle_position(self.dragged_particle, self.pointer_x, self.pointer_y)
+end
+
+local function preserve_grabbed_area(self, particles)
+    if not self.dragged_particle or not self.grabbed_area or self.grabbed_area <= 0 then
+        return
+    end
+
+    for _ = 1, AREA_ITERATIONS do
+        local region = voronoi.get_region(self.diagram, self.dragged_particle)
+        local current_area = math.abs(region.area)
+        local relative_error = (self.grabbed_area - current_area) / self.grabbed_area
+        if math.abs(relative_error) < AREA_TOLERANCE then
+            break
+        end
+
+        local radius = math.sqrt(self.grabbed_area / math.pi)
+        local step = math.max(-MAX_NEIGHBOR_STEP,
+            math.min(MAX_NEIGHBOR_STEP, relative_error * radius * AREA_GAIN))
+        local center = particles[self.dragged_particle]
+        local moved = {}
+        for _, edge in ipairs(region.edges) do
+            local neighbor_index = edge.neighbor
+            local neighbor = particles[neighbor_index]
+            if neighbor_index > 0 and neighbor and not moved[neighbor_index] then
+                local dx = neighbor.x - center.x
+                local dy = neighbor.y - center.y
+                local distance = math.sqrt(dx * dx + dy * dy)
+                if distance > 0.001 then
+                    system.offset_particle(neighbor_index, dx / distance * step, dy / distance * step)
+                    moved[neighbor_index] = true
+                end
+            end
+        end
+        generate_diagram(self, particles)
+    end
+
+
+    local final_area = math.abs(voronoi.get_region(self.diagram, self.dragged_particle).area)
+    self.current_grabbed_area = final_area
+    if automation_bridge then
+        automation_bridge.publish("voronoi.grab", {
+            active = true,
+            particle = self.dragged_particle,
+            target_area = self.grabbed_area,
+            current_area = final_area,
+            relative_error = (final_area - self.grabbed_area) / self.grabbed_area,
+        })
+    end
 end
 
 local function draw_particles(particles)
@@ -46,9 +176,10 @@ end
 
 
 function init(self)
+    msg.post(".", "acquire_input_focus")
     math.randomseed(0x123456)
-    self.width = tonumber(sys.get_config("display.width", "800"))
-    self.height = tonumber(sys.get_config("display.height", "600"))
+    self.width = sys.get_config_int("display.width", 800)
+    self.height = sys.get_config_int("display.height", 600)
 
     local logosize = 128
     local scale_width = self.width / logosize
@@ -58,32 +189,41 @@ function init(self)
     -- debug texture
     self.textureheader = {width=self.width,
                         height=self.height,
-                        type=resource.TEXTURE_TYPE_2D,
-                        format=resource.TEXTURE_FORMAT_RGB,
-                        num_mip_maps=1 }
+                        type=graphics.TEXTURE_TYPE_2D,
+                        format=graphics.TEXTURE_FORMAT_RGB }
 
     self.diagram = voronoi.create(self.width, self.height)
 
     init_particles(self.diagram, num_particles, self.width, self.height)
+    generate_diagram(self, system.get_particles())
+
+    if automation_bridge then
+        automation_bridge.publish("example.voronoi", { ready = true })
+    end
 
     --msg.post("@system:", "toggle_profile")
 
-    self.first = true
 end
 
 function update(self, dt)
     local time_start = socket.gettime()
 
-    particles = system.get_particles()
+    update_particle_count_keys(self, dt)
     update_particles(self, dt)
+    local particles = system.get_particles()
 
-    local points = get_points(particles)
-    voronoi.generate(self.diagram, points)
+    translate_grabbed_neighborhood(self, particles)
+    generate_diagram(self, particles)
+    preserve_grabbed_area(self, particles)
 
-    if self.first then
-        local regions = voronoi.get_regions(self.diagram)
-        pprint("REGIONS", regions)
-        self.first = false
+    if self.release_grab then
+        self.dragged_particle = nil
+        self.grabbed_area = nil
+        self.current_grabbed_area = nil
+        self.release_grab = false
+        if automation_bridge then
+            automation_bridge.publish("voronoi.grab", { active = false })
+        end
     end
 
     time_end = socket.gettime()
@@ -96,19 +236,63 @@ function update(self, dt)
     draw_particles(particles)
 end
 
+function final(self)
+    if self.diagram then
+        voronoi.destroy(self.diagram)
+        self.diagram = nil
+    end
+end
+
 function on_message(self, message_id, message, sender)
     -- Add message-handling code here
     -- Remove this function if not needed
 end
 
 function on_input(self, action_id, action)
-    -- Add input-handling code here
-    -- Remove this function if not needed
+    if action_id == hash("touch") and action.x and action.y then
+        self.pointer_x = action.x
+        self.pointer_y = action.y
+        if action.pressed then
+            self.release_grab = false
+            self.dragged_particle = nearest_particle(system.get_particles(), action.x, action.y)
+            if self.dragged_particle and self.diagram_ready then
+                local region = voronoi.get_region(self.diagram, self.dragged_particle)
+                self.grabbed_area = math.abs(region.area)
+            end
+        end
+        if action.released then
+            self.release_grab = true
+        end
+        return true
+    end
+
+    if action_id == hash("particle_increase") then
+        if action.pressed then
+            self.increase_particles = true
+            self.particle_change_accumulator = 0
+            change_particle_count(self, 1)
+        elseif action.released then
+            self.increase_particles = false
+        end
+        return true
+    end
+
+    if action_id == hash("particle_decrease") then
+        if action.pressed then
+            self.decrease_particles = true
+            self.particle_change_accumulator = 0
+            change_particle_count(self, -1)
+        elseif action.released then
+            self.decrease_particles = false
+        end
+        return true
+    end
+
+    return false
 end
 
 function on_reload(self)
-    voronoi.destroy(self.diagram)
-    self.diagram = voronoi.create(self.width, self.height)
+    recreate_diagram(self)
 
     label.set_text("logo#num_particles", tostring(num_particles))
     init_particles(self.diagram, num_particles, self.width, self.height)

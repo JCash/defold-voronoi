@@ -1,0 +1,71 @@
+script: "/main/menu.gui_script"
+fonts {
+  name: "menu"
+  font: "/main/menu.font"
+}
+fonts {
+  name: "title"
+  font: "/main/menu_title.font"
+}
+nodes {
+  position { x: 400.0 y: 300.0 }
+  size { x: 800.0 y: 600.0 }
+  type: TYPE_BOX
+  id: "background"
+  color { x: 0.025 y: 0.035 z: 0.055 w: 1.0 }
+}
+nodes {
+  position { x: 400.0 y: 438.0 }
+  size { x: 700.0 y: 70.0 }
+  type: TYPE_TEXT
+  text: "VORONOI EXAMPLES"
+  font: "title"
+  id: "title"
+}
+nodes {
+  position { x: 400.0 y: 330.0 }
+  size { x: 400.0 y: 70.0 }
+  type: TYPE_BOX
+  id: "voronoi_button"
+  color { x: 0.05 y: 0.32 z: 0.38 w: 1.0 }
+}
+nodes {
+  position { x: 400.0 y: 330.0 z: 0.1 }
+  size { x: 380.0 y: 50.0 }
+  type: TYPE_TEXT
+  text: "Voronoi Diagram"
+  font: "menu"
+  id: "voronoi_text"
+}
+nodes {
+  position { x: 400.0 y: 225.0 }
+  size { x: 400.0 y: 70.0 }
+  type: TYPE_BOX
+  id: "split_button"
+  color { x: 0.38 y: 0.10 z: 0.15 w: 1.0 }
+}
+nodes {
+  position { x: 400.0 y: 225.0 z: 0.1 }
+  size { x: 380.0 y: 50.0 }
+  type: TYPE_TEXT
+  text: "Split Screen"
+  font: "menu"
+  id: "split_text"
+}
+nodes {
+  position { x: 78.0 y: 558.0 }
+  size { x: 120.0 y: 52.0 }
+  type: TYPE_BOX
+  id: "back_button"
+  color { x: 0.08 y: 0.11 z: 0.16 w: 0.92 }
+}
+nodes {
+  position { x: 78.0 y: 558.0 z: 0.1 }
+  size { x: 110.0 y: 40.0 }
+  type: TYPE_TEXT
+  text: "Back"
+  font: "menu"
+  id: "back_text"
+}
+material: "/builtins/materials/gui.material"
+adjust_reference: ADJUST_REFERENCE_LEGACY

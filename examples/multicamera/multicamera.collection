@@ -1,0 +1,33 @@
+name: "multicamera"
+scale_along_z: 0
+instances {
+  id: "controller"
+  prototype: "/examples/multicamera/multicamera.go"
+}
+instances {
+  id: "camera_1"
+  prototype: "/examples/multicamera/camera.go"
+  position { x: 190.0 y: 300.0 z: 10.0 }
+}
+instances {
+  id: "camera_2"
+  prototype: "/examples/multicamera/camera.go"
+  position { x: 480.0 y: 300.0 z: 10.0 }
+}
+instances {
+  id: "camera_3"
+  prototype: "/examples/multicamera/camera.go"
+  position { x: 320.0 y: 300.0 z: 10.0 }
+}
+instances {
+  id: "player_label_1"
+  prototype: "/examples/multicamera/player_label.go"
+}
+instances {
+  id: "player_label_2"
+  prototype: "/examples/multicamera/player_label.go"
+}
+instances {
+  id: "player_label_3"
+  prototype: "/examples/multicamera/player_label.go"
+}

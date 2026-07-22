@@ -1,0 +1,255 @@
+local voronoi_split_screen = require("voronoi.voronoi_split_screen")
+
+local WIDTH = 800
+local HEIGHT = 600
+local CAMERA_ZOOM = 1.20
+local PLAYER_SPEED = 190
+local PLAYER_COLORS = {
+    vmath.vector4(0.18, 0.92, 1.00, 1),
+    vmath.vector4(1.00, 0.32, 0.36, 1),
+    vmath.vector4(0.95, 0.76, 0.16, 1),
+}
+
+local function push_vertex(vertices, colors, x, y, z, color)
+    vertices[#vertices + 1] = x
+    vertices[#vertices + 1] = y
+    vertices[#vertices + 1] = z
+    colors[#colors + 1] = color.x
+    colors[#colors + 1] = color.y
+    colors[#colors + 1] = color.z
+    colors[#colors + 1] = color.w
+end
+
+local function add_triangle(vertices, colors, a, b, c, color)
+    push_vertex(vertices, colors, a.x, a.y, a.z or 0, color)
+    push_vertex(vertices, colors, b.x, b.y, b.z or 0, color)
+    push_vertex(vertices, colors, c.x, c.y, c.z or 0, color)
+end
+
+local function add_quad(vertices, colors, x0, y0, x1, y1, z, color)
+    add_triangle(vertices, colors, vmath.vector3(x0, y0, z), vmath.vector3(x1, y0, z), vmath.vector3(x1, y1, z), color)
+    add_triangle(vertices, colors, vmath.vector3(x0, y0, z), vmath.vector3(x1, y1, z), vmath.vector3(x0, y1, z), color)
+end
+
+local function add_circle(vertices, colors, center, radius, color)
+    local segments = 24
+    for i = 0, segments - 1 do
+        local a0 = math.pi * 2 * i / segments
+        local a1 = math.pi * 2 * (i + 1) / segments
+        add_triangle(vertices, colors,
+            vmath.vector3(center.x, center.y, 0.16),
+            vmath.vector3(center.x + math.cos(a0) * radius, center.y + math.sin(a0) * radius, 0.16),
+            vmath.vector3(center.x + math.cos(a1) * radius, center.y + math.sin(a1) * radius, 0.16),
+            color)
+    end
+end
+
+local function make_colored_buffer(vertices, colors, aabb)
+    local result = buffer.create(#vertices / 3, {
+        { name = hash("position"), type = buffer.VALUE_TYPE_FLOAT32, count = 3 },
+        { name = hash("color"), type = buffer.VALUE_TYPE_FLOAT32, count = 4 },
+    })
+    local position_stream = buffer.get_stream(result, hash("position"))
+    local color_stream = buffer.get_stream(result, hash("color"))
+    for i = 1, #vertices do
+        position_stream[i] = vertices[i]
+    end
+    for i = 1, #colors do
+        color_stream[i] = colors[i]
+    end
+    buffer.set_metadata(result, hash("AABB"), aabb, buffer.VALUE_TYPE_FLOAT32)
+    return result
+end
+
+local function make_world_buffer()
+    local vertices = {}
+    local colors = {}
+    add_quad(vertices, colors, -300, -300, 1100, 900, 0, vmath.vector4(0.035, 0.055, 0.09, 1))
+    add_quad(vertices, colors, 0, 0, WIDTH, HEIGHT, 0.01, vmath.vector4(0.075, 0.105, 0.15, 1))
+
+    local grid = vmath.vector4(0.13, 0.18, 0.24, 1)
+    for x = 0, WIDTH, 80 do
+        add_quad(vertices, colors, x - 1.5, 0, x + 1.5, HEIGHT, 0.02, grid)
+    end
+    for y = 0, HEIGHT, 80 do
+        add_quad(vertices, colors, 0, y - 1.5, WIDTH, y + 1.5, 0.02, grid)
+    end
+
+    local obstacle = vmath.vector4(0.18, 0.24, 0.32, 1)
+    add_quad(vertices, colors, 80, 180, 150, 250, 0.08, obstacle)
+    add_quad(vertices, colors, 325, 60, 405, 125, 0.08, obstacle)
+    add_quad(vertices, colors, 620, 160, 735, 220, 0.08, obstacle)
+    add_quad(vertices, colors, 510, 410, 590, 535, 0.08, obstacle)
+    add_quad(vertices, colors, 180, 430, 275, 505, 0.08, obstacle)
+    return make_colored_buffer(vertices, colors, { -300, -300, -1, 1100, 900, 1 })
+end
+
+local function make_actor_buffer(site, color)
+    local vertices = {}
+    local colors = {}
+    add_circle(vertices, colors, site, 22, color)
+    add_circle(vertices, colors, site, 8, vmath.vector4(1, 1, 1, 1))
+    return make_colored_buffer(vertices, colors, {
+        site.x - 22, site.y - 22, -1,
+        site.x + 22, site.y + 22, 1,
+    })
+end
+
+local function sibling_component_url(path, fragment)
+    local url = msg.url()
+    url.path = hash(path)
+    url.fragment = hash(fragment)
+    return url
+end
+
+local function update_human(self, dt)
+    local dx = (self.held[hash("right")] and 1 or 0) - (self.held[hash("left")] and 1 or 0)
+    local dy = (self.held[hash("up")] and 1 or 0) - (self.held[hash("down")] and 1 or 0)
+    local length = math.sqrt(dx * dx + dy * dy)
+    if length > 0 then
+        self.sites[1].x = self.sites[1].x + dx / length * PLAYER_SPEED * dt
+        self.sites[1].y = self.sites[1].y + dy / length * PLAYER_SPEED * dt
+    end
+    self.sites[1].x = math.max(35, math.min(WIDTH - 35, self.sites[1].x))
+    self.sites[1].y = math.max(35, math.min(HEIGHT - 35, self.sites[1].y))
+end
+
+local function update_example_meshes(self)
+    for i, site in ipairs(self.sites) do
+        resource.set_buffer(self.actor_resources[i], make_actor_buffer(site, PLAYER_COLORS[i]))
+    end
+end
+
+local function update_player_labels(self)
+    for i, site in ipairs(self.sites) do
+        go.set_position(vmath.vector3(site.x + 27, site.y + 18, 0.9), self.label_paths[i])
+    end
+end
+
+local function publish_state(self)
+    if automation_bridge then
+        automation_bridge.publish("example.multicamera", {
+            ready = true,
+            human_x = self.sites[1].x,
+            human_y = self.sites[1].y,
+            npc_1_x = self.sites[2].x,
+            npc_1_y = self.sites[2].y,
+            npc_2_x = self.sites[3].x,
+            npc_2_y = self.sites[3].y,
+            camera_groups = voronoi_split_screen.get_group_count(self.split_screen),
+            transition = voronoi_split_screen.get_transition(self.split_screen),
+            voronoi_sites = voronoi_split_screen.get_region_count(self.split_screen),
+            divider_edges = voronoi_split_screen.get_divider_edge_count(self.split_screen),
+        })
+    end
+end
+
+function init(self)
+    msg.post(".", "acquire_input_focus")
+    self.time = 0
+    self.held = {}
+    self.sites = {
+        vmath.vector3(180, 300, 0),
+        vmath.vector3(480, 300, 0),
+        vmath.vector3(320, 300, 0),
+    }
+    self.actor_resources = {
+        go.get("#actor_1", "vertices"),
+        go.get("#actor_2", "vertices"),
+        go.get("#actor_3", "vertices"),
+    }
+    self.label_paths = { "/player_label_1", "/player_label_2", "/player_label_3" }
+    local camera_paths = { "/camera_1", "/camera_2", "/camera_3" }
+    self.split_screen = voronoi_split_screen.create({
+        width = WIDTH,
+        height = HEIGHT,
+        merge_distance = 150,
+        split_distance = 190,
+        transition_duration = 0.55,
+        merged_site_radius = 0.35,
+        camera_zoom = CAMERA_ZOOM,
+        camera_paths = camera_paths,
+        camera_urls = {
+            sibling_component_url("/camera_1", "camera"),
+            sibling_component_url("/camera_2", "camera"),
+            sibling_component_url("/camera_3", "camera"),
+        },
+        mask_resources = {
+            go.get("#mask_1", "vertices"),
+            go.get("#mask_2", "vertices"),
+            go.get("#mask_3", "vertices"),
+        },
+        divider_resource = go.get("#divider", "vertices"),
+        divider_colors = PLAYER_COLORS,
+    })
+
+    resource.set_buffer(go.get("#world", "vertices"), make_world_buffer())
+    update_example_meshes(self)
+    voronoi_split_screen.update(self.split_screen, self.sites, 0, true)
+    update_player_labels(self)
+
+    label.set_text("/player_label_1#label", "P1 HUMAN")
+    label.set_text("/player_label_2#label", "P2 NPC")
+    label.set_text("/player_label_3#label", "P3 NPC")
+    if automation_bridge then
+        automation_bridge.annotate("main:/controller#world", {
+            automation_id = "voronoi_camera_world",
+            role = "three_camera_world",
+        })
+    end
+    publish_state(self)
+end
+
+function final(self)
+    voronoi_split_screen.destroy(self.split_screen)
+end
+
+function update(self, dt)
+    self.time = self.time + dt
+    update_human(self, dt)
+
+    local angle = self.time * 0.72
+    self.sites[2].x = 350 + math.cos(angle) * 145
+    self.sites[2].y = 300 + math.sin(angle) * 145
+    self.sites[3].x = 450 + math.cos(-angle + 0.7) * 145
+    self.sites[3].y = 300 + math.sin(-angle + 0.7) * 145
+
+    update_example_meshes(self)
+    voronoi_split_screen.update(self.split_screen, self.sites, dt, false)
+    update_player_labels(self)
+    publish_state(self)
+end
+
+function on_input(self, action_id, action)
+    local movement_action = action_id
+    if action_id == hash("particle_increase") then
+        movement_action = hash("up")
+    elseif action_id == hash("particle_decrease") then
+        movement_action = hash("down")
+    end
+    if movement_action == hash("up") or movement_action == hash("down") or movement_action == hash("left") or movement_action == hash("right") then
+        if action.pressed then
+            self.held[movement_action] = true
+        elseif action.released then
+            self.held[movement_action] = nil
+        end
+        return true
+    end
+
+    if action_id == hash("touch") then
+        if action.pressed then
+            local dx = action.x - self.sites[1].x
+            local dy = action.y - self.sites[1].y
+            self.drag_human = dx * dx + dy * dy < 55 * 55
+        end
+        if self.drag_human and not action.released then
+            self.sites[1].x = math.max(35, math.min(WIDTH - 35, action.x))
+            self.sites[1].y = math.max(35, math.min(HEIGHT - 35, action.y))
+        end
+        if action.released then
+            self.drag_human = false
+        end
+        return true
+    end
+    return false
+end

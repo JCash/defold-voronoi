@@ -12,8 +12,14 @@
 // Defold SDK
 #include <dmsdk/sdk.h>
 
+// Apple's Objective-C headers define `nil` as a macro. jc_voronoi 0.10.0 uses
+// the same identifier internally for its RAVL sentinel nodes.
+#if defined(nil)
+#undef nil
+#endif
+
 #define JC_VORONOI_IMPLEMENTATION
-#include "jc_voronoi.h"
+#include <jc_voronoi.h>
 
 extern void draw_triangle(const jcv_point* v0, const jcv_point* v1, const jcv_point* v2, unsigned char* image, int width, int height, int nchannels, unsigned char* color);
 
@@ -65,6 +71,10 @@ static int Destroy(lua_State* L)
         dmScript::Unref(L, LUA_REGISTRYINDEX, ctx->m_BufferRef);
     }
 
+    if(ctx->m_Diagram.internal)
+    {
+        jcv_diagram_free(&ctx->m_Diagram);
+    }
     if(ctx->m_Points)
     {
         free(ctx->m_Points);
@@ -119,8 +129,6 @@ static int Generate(lua_State* L)
         lua_pop(L, 1);
     }
 
-    memset(&ctx->m_Diagram, 0, sizeof(jcv_diagram));
-
     jcv_rect rect = {(jcv_real)0, (jcv_real)0, (jcv_real)ctx->m_Width, (jcv_real)ctx->m_Height};
     jcv_diagram_generate(ctx->m_NumPoints, ctx->m_Points, &rect, 0, &ctx->m_Diagram);
 
@@ -143,14 +151,14 @@ static int Relax(lua_State* L)
         jcv_point sum = site->p;
         int count = 1;
 
-        const jcv_graphedge* edge = site->edges;
-
-        while( edge )
+        jcv_edge_iter iter;
+        jcv_edge edge;
+        jcv_site_get_edges(&ctx->m_Diagram, site, &iter);
+        while( jcv_edge_next(&iter, &edge) )
         {
-            sum.x += edge->pos[0].x;
-            sum.y += edge->pos[0].y;
+            sum.x += edge.pos[0].x;
+            sum.y += edge.pos[0].y;
             ++count;
-            edge = edge->next;
         }
 
         points[site->index].x = sum.x / count;
@@ -160,7 +168,7 @@ static int Relax(lua_State* L)
     return 0;
 }
 
-static int PushRegion(lua_State* L, const jcv_site* site)
+static int PushRegion(lua_State* L, const jcv_diagram* diagram, const jcv_site* site)
 {
     lua_newtable(L);
 
@@ -176,8 +184,10 @@ static int PushRegion(lua_State* L, const jcv_site* site)
 
     float area = 0;
     int edgeindex = 0;
-    const jcv_graphedge* e = site->edges;
-    while( e )
+    jcv_edge_iter iter;
+    jcv_edge edge;
+    jcv_site_get_edges(diagram, site, &iter);
+    while( jcv_edge_next(&iter, &edge) )
     {
         lua_pushnumber(L, ++edgeindex);
         lua_newtable(L);
@@ -187,22 +197,20 @@ static int PushRegion(lua_State* L, const jcv_site* site)
             lua_pushnumber(L, i+1);
             lua_newtable(L);
 
-            lua_pushnumber(L, e->pos[i].x);
+            lua_pushnumber(L, edge.pos[i].x);
             lua_setfield(L, -2, "x");
-            lua_pushnumber(L, e->pos[i].y);
+            lua_pushnumber(L, edge.pos[i].y);
             lua_setfield(L, -2, "y");
 
             lua_settable(L, -3);
         }
 
-        area += e->pos[0].x * e->pos[1].y - e->pos[0].y * e->pos[1].x;
+        area += edge.pos[0].x * edge.pos[1].y - edge.pos[0].y * edge.pos[1].x;
 
-        lua_pushinteger(L, e->neighbor ? e->neighbor->index+1 : 0);
+        lua_pushinteger(L, edge.sites[1] ? edge.sites[1]->index+1 : 0);
         lua_setfield(L, -2, "neighbor");
 
         lua_settable(L, -3);
-
-        e = e->next;
     }
 
     lua_settable(L, -3);
@@ -220,16 +228,28 @@ static int GetRegion(lua_State* L)
     VoronoiContext* ctx = CheckVoronoiDiagram(L, 1);
 
     int index = luaL_checkint(L, 2);
-    if(index < 1 || index >= ctx->m_Diagram.numsites+1)
+    if(index < 1 || index > ctx->m_NumPoints)
     {
-        return luaL_error(L, "Index '%d' out of range [1, %d)", index, ctx->m_Diagram.numsites+1);
+        return luaL_error(L, "Index '%d' out of range [1, %d]", index, ctx->m_NumPoints);
     }
-    index--;
 
     const jcv_site* sites = jcv_diagram_get_sites( &ctx->m_Diagram );
-    const jcv_site* site = &sites[index];
+    const jcv_site* site = 0;
+    const int original_index = index - 1;
+    for(int i = 0; i < ctx->m_Diagram.numsites; ++i)
+    {
+        if(sites[i].index == original_index)
+        {
+            site = &sites[i];
+            break;
+        }
+    }
+    if(!site)
+    {
+        return luaL_error(L, "No region exists for point index '%d'", index);
+    }
 
-    PushRegion(L, site);
+    PushRegion(L, &ctx->m_Diagram, site);
     return 1;
 }
 
@@ -244,7 +264,7 @@ static int GetRegions(lua_State* L)
     const jcv_site* sites = jcv_diagram_get_sites( &ctx->m_Diagram );
     for( int i = 0; i < ctx->m_Diagram.numsites; ++i )
     {
-        PushRegion(L, &sites[i]);
+        PushRegion(L, &ctx->m_Diagram, &sites[i]);
         lua_rawseti(L, -2, i+1);
     }
 
@@ -266,11 +286,12 @@ static void DrawCells(const jcv_diagram* diagram, uint8_t* image, int width, int
         color_tri[1] = basecolor + (unsigned char)(rand() % (235 - basecolor));
         color_tri[2] = basecolor + (unsigned char)(rand() % (235 - basecolor));
 
-        const jcv_graphedge* e = site->edges;
-        while( e )
+        jcv_edge_iter iter;
+        jcv_edge edge;
+        jcv_site_get_edges(diagram, site, &iter);
+        while( jcv_edge_next(&iter, &edge) )
         {
-            draw_triangle( &site->p, &e->pos[0], &e->pos[1], image, width, height, 3, color_tri);
-            e = e->next;
+            draw_triangle( &site->p, &edge.pos[0], &edge.pos[1], image, width, height, 3, color_tri);
         }
     }
 }

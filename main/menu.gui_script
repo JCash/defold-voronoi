@@ -1,0 +1,56 @@
+local MENU_NODES = {
+    "background",
+    "title",
+    "voronoi_button",
+    "voronoi_text",
+    "split_button",
+    "split_text",
+}
+
+local function set_menu_visible(visible)
+    for _, id in ipairs(MENU_NODES) do
+        gui.set_enabled(gui.get_node(id), visible)
+    end
+    gui.set_enabled(gui.get_node("back_button"), not visible)
+    gui.set_enabled(gui.get_node("back_text"), not visible)
+end
+
+function init(self)
+    msg.post(".", "acquire_input_focus")
+    self.menu_visible = true
+    set_menu_visible(true)
+end
+
+function on_message(self, message_id)
+    if message_id == hash("show_menu") then
+        self.menu_visible = true
+        set_menu_visible(true)
+    elseif message_id == hash("show_back") then
+        self.menu_visible = false
+        set_menu_visible(false)
+        -- A freshly loaded example also acquires focus; put the persistent UI
+        -- back on top while allowing unhandled input to continue to the game.
+        msg.post(".", "acquire_input_focus")
+    end
+end
+
+function on_input(self, action_id, action)
+    if action_id ~= hash("touch") or not action.released then
+        return false
+    end
+
+    local point = vmath.vector3(action.x, action.y, 0)
+    if self.menu_visible then
+        if gui.pick_node(gui.get_node("voronoi_button"), point.x, point.y) then
+            msg.post("#script", "select_example", { example = hash("voronoi") })
+            return true
+        elseif gui.pick_node(gui.get_node("split_button"), point.x, point.y) then
+            msg.post("#script", "select_example", { example = hash("multicamera") })
+            return true
+        end
+    elseif gui.pick_node(gui.get_node("back_button"), point.x, point.y) then
+        msg.post("#script", "back_to_menu")
+        return true
+    end
+    return false
+end

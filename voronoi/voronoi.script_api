@@ -1,0 +1,101 @@
+- name: voronoi
+  type: table
+  desc: Creates bounded two-dimensional Voronoi diagrams and exposes their regions, edges, and debug image.
+
+  members:
+  - name: create
+    type: function
+    desc: Creates a reusable Voronoi diagram context for a rectangular area.
+    parameters:
+    - name: width
+      type: number
+      desc: Width of the diagram bounds in coordinate units.
+    - name: height
+      type: number
+      desc: Height of the diagram bounds in coordinate units.
+    returns:
+    - name: diagram
+      type: userdata
+      desc: Diagram context passed to the other voronoi functions.
+    examples:
+    - desc: local diagram = voronoi.create(800, 600)
+
+  - name: destroy
+    type: function
+    desc: Releases a diagram context. Do not use the context after destroying it.
+    parameters:
+    - name: diagram
+      type: userdata
+      desc: Diagram context returned by voronoi.create().
+    examples:
+    - desc: voronoi.destroy(diagram)
+
+  - name: generate
+    type: function
+    desc: Replaces the diagram with regions generated from a flat list of x/y site coordinates. Duplicate sites may be removed.
+    parameters:
+    - name: diagram
+      type: userdata
+      desc: Diagram context returned by voronoi.create().
+    - name: points
+      type: table
+      desc: Flat coordinate array in the form { x1, y1, x2, y2, ... }.
+    examples:
+    - desc: voronoi.generate(diagram, { 100, 100, 400, 300, 700, 500 })
+
+  - name: get_regions
+    type: function
+    desc: Returns every generated region. Each region contains index, x, y, area, and an ordered edges array. Each edge contains points at indices 1 and 2 plus a 1-based neighbor index, or 0 at the diagram boundary.
+    parameters:
+    - name: diagram
+      type: userdata
+      desc: Generated diagram context.
+    returns:
+    - name: regions
+      type: table
+      desc: Array of region tables, indexed from 1.
+    examples:
+    - desc: for _, region in ipairs(voronoi.get_regions(diagram)) do pprint(region) end
+
+  - name: get_num_regions
+    type: function
+    desc: Returns the number of valid regions in the generated diagram. This may be smaller than the supplied site count when sites were duplicates.
+    parameters:
+    - name: diagram
+      type: userdata
+      desc: Generated diagram context.
+    returns:
+    - name: count
+      type: number
+      desc: Number of generated regions.
+
+  - name: get_region
+    type: function
+    desc: Returns one generated region with index, x, y, area, and ordered edges. Each edge contains points at indices 1 and 2 plus a 1-based neighbor index, or 0 at the diagram boundary.
+    parameters:
+    - name: diagram
+      type: userdata
+      desc: Generated diagram context.
+    - name: index
+      type: number
+      desc: 1-based original site index.
+    returns:
+    - name: region
+      type: table
+      desc: Region table for the requested site.
+    examples:
+    - desc: local region = voronoi.get_region(diagram, 1)
+
+  - name: get_debug_image
+    type: function
+    desc: Rasterizes the current diagram into an RGB buffer matching the context dimensions.
+    parameters:
+    - name: diagram
+      type: userdata
+      desc: Generated diagram context.
+    returns:
+    - name: image
+      type: userdata
+      desc: Buffer with a uint8 rgb stream containing three components per pixel.
+    examples:
+    - desc: resource.set_texture(texture, texture_header, voronoi.get_debug_image(diagram))

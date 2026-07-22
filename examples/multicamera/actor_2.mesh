@@ -1,0 +1,4 @@
+material: "/examples/multicamera/actor_2.material"
+vertices: "/examples/multicamera/actor_2.buffer"
+primitive_type: PRIMITIVE_TRIANGLES
+position_stream: "position"

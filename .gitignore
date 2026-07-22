@@ -4,7 +4,9 @@
 .lock-wscript
 build
 *.pyc
+__pycache__/
 .project
 .cproject
 builtins
 .internal
+/.editor_settings

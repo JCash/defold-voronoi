@@ -1,0 +1,30 @@
+size {
+  x: 180.0
+  y: 32.0
+}
+color {
+  x: 1.0
+  y: 1.0
+  z: 1.0
+  w: 1.0
+}
+outline {
+  x: 0.0
+  y: 0.0
+  z: 0.0
+  w: 1.0
+}
+shadow {
+  x: 0.0
+  y: 0.0
+  z: 0.0
+  w: 1.0
+}
+leading: 1.0
+tracking: 0.0
+pivot: PIVOT_SW
+blend_mode: BLEND_MODE_ALPHA
+line_break: false
+text: "PLAYER"
+font: "/examples/multicamera/white.font"
+material: "/builtins/fonts/label-df.material"

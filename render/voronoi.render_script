@@ -1,0 +1,159 @@
+local MSG_CLEAR_COLOR = hash("clear_color")
+local MSG_WINDOW_RESIZED = hash("window_resized")
+local MSG_SET_CAMERAS = hash("set_voronoi_cameras")
+local MSG_CLEAR_CAMERAS = hash("clear_voronoi_cameras")
+
+local function stretch_projection()
+    return vmath.matrix4_orthographic(0, render.get_width(), 0, render.get_height(), -1, 1)
+end
+
+local function gui_projection()
+    return vmath.matrix4_orthographic(0, render.get_window_width(), 0, render.get_window_height(), -1, 1)
+end
+
+local function set_alpha_blending()
+    render.set_blend_func(graphics.BLEND_FACTOR_SRC_ALPHA, graphics.BLEND_FACTOR_ONE_MINUS_SRC_ALPHA)
+end
+
+local function draw_default_world(self)
+    render.set_camera()
+    render.set_view(vmath.matrix4())
+    render.set_projection(stretch_projection())
+    render.set_viewport(0, 0, render.get_window_width(), render.get_window_height())
+
+    render.enable_state(graphics.STATE_BLEND)
+    render.draw(self.tile_pred)
+    render.draw(self.particle_pred)
+    render.disable_state(graphics.STATE_BLEND)
+
+    render.enable_state(graphics.STATE_DEPTH_TEST)
+    render.enable_state(graphics.STATE_CULL_FACE)
+    render.draw(self.model_pred)
+    render.disable_state(graphics.STATE_CULL_FACE)
+    render.disable_state(graphics.STATE_DEPTH_TEST)
+end
+
+local function write_cell_stencil(self, mask_pred)
+    render.set_camera()
+    render.set_view(vmath.matrix4())
+    render.set_projection(stretch_projection())
+    render.set_color_mask(false, false, false, false)
+    render.enable_state(graphics.STATE_STENCIL_TEST)
+    render.set_stencil_mask(0xff)
+    render.set_stencil_func(graphics.COMPARE_FUNC_ALWAYS, 1, 0xff)
+    render.set_stencil_op(graphics.STENCIL_OP_KEEP, graphics.STENCIL_OP_KEEP, graphics.STENCIL_OP_REPLACE)
+    render.draw(mask_pred)
+    render.set_color_mask(true, true, true, true)
+end
+
+local function draw_camera_cell(self, camera_url, mask_pred)
+    render.clear({ [graphics.BUFFER_TYPE_STENCIL_BIT] = 0 })
+    write_cell_stencil(self, mask_pred)
+
+    render.set_stencil_mask(0x00)
+    render.set_stencil_func(graphics.COMPARE_FUNC_EQUAL, 1, 0xff)
+    render.set_stencil_op(graphics.STENCIL_OP_KEEP, graphics.STENCIL_OP_KEEP, graphics.STENCIL_OP_KEEP)
+    render.set_camera(camera_url, { use_frustum = true })
+    render.draw(self.world_pred)
+    for _, actor_pred in ipairs(self.actor_preds) do
+        render.draw(actor_pred)
+    end
+    render.enable_state(graphics.STATE_BLEND)
+    render.draw(self.tile_pred)
+    render.disable_state(graphics.STATE_BLEND)
+    render.set_camera()
+    render.disable_state(graphics.STATE_STENCIL_TEST)
+end
+
+local function draw_owner_actors(self)
+    render.disable_state(graphics.STATE_STENCIL_TEST)
+    for i, actor_pred in ipairs(self.actor_preds) do
+        render.set_camera(self.cameras[i], { use_frustum = true })
+        render.draw(actor_pred)
+    end
+    render.set_camera()
+end
+
+function init(self)
+    self.clear_color = vmath.vector4(
+        sys.get_config_number("render.clear_color_red", 0.025),
+        sys.get_config_number("render.clear_color_green", 0.035),
+        sys.get_config_number("render.clear_color_blue", 0.055),
+        sys.get_config_number("render.clear_color_alpha", 1))
+    self.tile_pred = render.predicate({ "tile" })
+    self.particle_pred = render.predicate({ "particle" })
+    self.model_pred = render.predicate({ "model" })
+    self.gui_pred = render.predicate({ "gui" })
+    self.debug_text_pred = render.predicate({ "debug_text" })
+    self.world_pred = render.predicate({ "voronoi_world" })
+    self.divider_pred = render.predicate({ "voronoi_divider" })
+    self.actor_preds = {
+        render.predicate({ "voronoi_actor_1" }),
+        render.predicate({ "voronoi_actor_2" }),
+        render.predicate({ "voronoi_actor_3" }),
+    }
+    self.mask_preds = {
+        render.predicate({ "voronoi_mask_1" }),
+        render.predicate({ "voronoi_mask_2" }),
+        render.predicate({ "voronoi_mask_3" }),
+    }
+end
+
+function update(self)
+    local width = render.get_window_width()
+    local height = render.get_window_height()
+    if width == 0 or height == 0 then
+        return
+    end
+
+    render.set_viewport(0, 0, width, height)
+    render.set_depth_mask(true)
+    render.set_stencil_mask(0xff)
+    render.clear({
+        [graphics.BUFFER_TYPE_COLOR0_BIT] = self.clear_color,
+        [graphics.BUFFER_TYPE_DEPTH_BIT] = 1,
+        [graphics.BUFFER_TYPE_STENCIL_BIT] = 0,
+    })
+    set_alpha_blending()
+
+    if self.cameras then
+        for i = 1, self.camera_count do
+            draw_camera_cell(self, self.cameras[i], self.mask_preds[i])
+        end
+        draw_owner_actors(self)
+    else
+        draw_default_world(self)
+    end
+
+    render.set_camera()
+    render.set_view(vmath.matrix4())
+    render.set_projection(stretch_projection())
+    render.enable_state(graphics.STATE_BLEND)
+    render.draw(self.divider_pred)
+    render.disable_state(graphics.STATE_BLEND)
+    render.draw_debug3d()
+
+    render.set_projection(gui_projection())
+    render.enable_state(graphics.STATE_BLEND)
+    render.enable_state(graphics.STATE_STENCIL_TEST)
+    render.set_stencil_mask(0x00)
+    render.set_stencil_func(graphics.COMPARE_FUNC_ALWAYS, 0, 0xff)
+    render.draw(self.gui_pred)
+    render.draw(self.debug_text_pred)
+    render.disable_state(graphics.STATE_STENCIL_TEST)
+    render.disable_state(graphics.STATE_BLEND)
+end
+
+function on_message(self, message_id, message)
+    if message_id == MSG_CLEAR_COLOR then
+        self.clear_color = message.color
+    elseif message_id == MSG_WINDOW_RESIZED then
+        -- Projections are derived from the live window dimensions each frame.
+    elseif message_id == MSG_SET_CAMERAS then
+        self.cameras = { message.camera_1, message.camera_2, message.camera_3 }
+        self.camera_count = message.count or 3
+    elseif message_id == MSG_CLEAR_CAMERAS then
+        self.cameras = nil
+        self.camera_count = nil
+    end
+end

@@ -1,0 +1,50 @@
+local function publish_state(self)
+    if automation_bridge then
+        automation_bridge.publish("launcher", {
+            ready = true,
+            screen = self.active_example and "example" or "menu",
+            example = self.active_example_name or "",
+        })
+    end
+end
+
+function init(self)
+    self.examples = {
+        [hash("voronoi")] = msg.url(nil, go.get_id(), hash("voronoi_example")),
+        [hash("multicamera")] = msg.url(nil, go.get_id(), hash("multicamera_example")),
+    }
+    self.active_proxy = nil
+    self.active_example = nil
+    self.active_example_name = nil
+    publish_state(self)
+end
+
+function on_message(self, message_id, message, sender)
+    if message_id == hash("select_example") and not self.active_proxy then
+        local proxy = self.examples[message.example]
+        if proxy then
+            self.loading_proxy = proxy
+            self.loading_example = message.example
+            msg.post(proxy, "load")
+        end
+    elseif message_id == hash("proxy_loaded") and sender == self.loading_proxy then
+        self.active_proxy = sender
+        self.active_example = self.loading_example
+        self.active_example_name = self.active_example == hash("voronoi") and "voronoi" or "multicamera"
+        self.loading_proxy = nil
+        self.loading_example = nil
+        msg.post(sender, "init")
+        msg.post(sender, "enable")
+        msg.post("#menu", "show_back")
+        publish_state(self)
+    elseif message_id == hash("back_to_menu") and self.active_proxy then
+        msg.post(self.active_proxy, "disable")
+        msg.post(self.active_proxy, "unload")
+    elseif message_id == hash("proxy_unloaded") and sender == self.active_proxy then
+        self.active_proxy = nil
+        self.active_example = nil
+        self.active_example_name = nil
+        msg.post("#menu", "show_menu")
+        publish_state(self)
+    end
+end
