@@ -104,10 +104,10 @@ local function translate_grabbed_neighborhood(self, particles)
     local center = particles[self.dragged_particle]
     local dx = self.pointer_x - center.x
     local dy = self.pointer_y - center.y
-    local region = voronoi.get_region(self.diagram, self.dragged_particle)
+    local site = voronoi.get_site(self.diagram, self.dragged_particle)
     local moved = {}
-    for _, edge in ipairs(region.edges) do
-        local neighbor_index = edge.neighbor
+    for _, edge in ipairs(site.edges) do
+        local neighbor_index = edge.sites[2]
         if neighbor_index > 0 and not moved[neighbor_index] then
             system.offset_particle(neighbor_index, dx, dy)
             moved[neighbor_index] = true
@@ -122,8 +122,8 @@ local function preserve_grabbed_area(self, particles)
     end
 
     for _ = 1, AREA_ITERATIONS do
-        local region = voronoi.get_region(self.diagram, self.dragged_particle)
-        local current_area = math.abs(region.area)
+        local site = voronoi.get_site(self.diagram, self.dragged_particle)
+        local current_area = math.abs(site.area)
         local relative_error = (self.grabbed_area - current_area) / self.grabbed_area
         if math.abs(relative_error) < AREA_TOLERANCE then
             break
@@ -134,8 +134,8 @@ local function preserve_grabbed_area(self, particles)
             math.min(MAX_NEIGHBOR_STEP, relative_error * radius * AREA_GAIN))
         local center = particles[self.dragged_particle]
         local moved = {}
-        for _, edge in ipairs(region.edges) do
-            local neighbor_index = edge.neighbor
+        for _, edge in ipairs(site.edges) do
+            local neighbor_index = edge.sites[2]
             local neighbor = particles[neighbor_index]
             if neighbor_index > 0 and neighbor and not moved[neighbor_index] then
                 local dx = neighbor.x - center.x
@@ -151,7 +151,7 @@ local function preserve_grabbed_area(self, particles)
     end
 
 
-    local final_area = math.abs(voronoi.get_region(self.diagram, self.dragged_particle).area)
+    local final_area = math.abs(voronoi.get_site(self.diagram, self.dragged_particle).area)
     self.current_grabbed_area = final_area
     if automation_bridge then
         automation_bridge.publish("voronoi.grab", {
@@ -256,8 +256,8 @@ function on_input(self, action_id, action)
             self.release_grab = false
             self.dragged_particle = nearest_particle(system.get_particles(), action.x, action.y)
             if self.dragged_particle and self.diagram_ready then
-                local region = voronoi.get_region(self.diagram, self.dragged_particle)
-                self.grabbed_area = math.abs(region.area)
+                local site = voronoi.get_site(self.diagram, self.dragged_particle)
+                self.grabbed_area = math.abs(site.area)
             end
         end
         if action.released then

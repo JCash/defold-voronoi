@@ -389,7 +389,7 @@ end
 | `clear_cameras_message` | No | `"clear_voronoi_cameras"` | Camera deactivation message. |
 
 The controller exposes `get_group_count`, `get_transition`,
-`get_region_count`, `get_divider_edge_count`, and `get_diagram` for diagnostics
+`get_site_count`, `get_divider_edge_count`, and `get_diagram` for diagnostics
 or UI.
 
 ## Supporting more than three cameras

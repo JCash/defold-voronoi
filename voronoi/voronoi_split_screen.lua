@@ -121,17 +121,17 @@ local function build_transition_targets(state, sites)
     return site_targets, camera_targets
 end
 
-local function make_mask_buffer(state, region)
-    local result = buffer.create(#region.edges * 3, {
+local function make_mask_buffer(state, site)
+    local result = buffer.create(#site.edges * 3, {
         { name = hash("position"), type = buffer.VALUE_TYPE_FLOAT32, count = 3 },
     })
     local positions = buffer.get_stream(result, hash("position"))
     local cursor = 1
-    for _, edge in ipairs(region.edges) do
+    for _, edge in ipairs(site.edges) do
         local points = {
-            region.x, region.y, 0,
-            edge[1].x, edge[1].y, 0,
-            edge[2].x, edge[2].y, 0,
+            site.p.x, site.p.y, 0,
+            edge.pos[1].x, edge.pos[1].y, 0,
+            edge.pos[2].x, edge.pos[2].y, 0,
         }
         for _, value in ipairs(points) do
             positions[cursor] = value
@@ -166,45 +166,45 @@ local function make_divider_buffer(state)
     local edge_records = {}
     local divider_edge_count = 0
 
-    for _, region in ipairs(voronoi.get_regions(state.diagram)) do
-        for _, edge in ipairs(region.edges) do
-            local first = string.format("%.3f,%.3f", edge[1].x, edge[1].y)
-            local second = string.format("%.3f,%.3f", edge[2].x, edge[2].y)
+    for _, site in ipairs(voronoi.get_sites(state.diagram)) do
+        for _, edge in ipairs(site.edges) do
+            local first = string.format("%.3f,%.3f", edge.pos[1].x, edge.pos[1].y)
+            local second = string.format("%.3f,%.3f", edge.pos[2].x, edge.pos[2].y)
             local edge_key = first < second and first .. ":" .. second or second .. ":" .. first
             local record = edge_records[edge_key]
             if not record then
-                record = { edge = edge, regions = {} }
+                record = { edge = edge, sites = {} }
                 edge_records[edge_key] = record
             end
-            record.regions[#record.regions + 1] = region.index
+            record.sites[#record.sites + 1] = site.index
         end
     end
 
-    -- An interior edge occurs in two region polygons. Deriving adjacency from
+    -- An interior edge occurs in two site polygons. Deriving adjacency from
     -- shared geometry also guarantees the visible divider matches the masks.
     for _, record in pairs(edge_records) do
-        if #record.regions == 2 then
+        if #record.sites == 2 then
             divider_edge_count = divider_edge_count + 1
-            local region_index = record.regions[1]
-            local neighbor = record.regions[2]
-            local was_separate = state.transition_from_group_ids[region_index] ~= state.transition_from_group_ids[neighbor]
-            local is_separate = state.player_group_ids[region_index] ~= state.player_group_ids[neighbor]
+            local site_index = record.sites[1]
+            local neighbor = record.sites[2]
+            local was_separate = state.transition_from_group_ids[site_index] ~= state.transition_from_group_ids[neighbor]
+            local is_separate = state.player_group_ids[site_index] ~= state.player_group_ids[neighbor]
             local from = was_separate and 1 or 0
             local target = is_separate and 1 or 0
             local visibility = from + (target - from) * state.transition_ease
             local edge = record.edge
-            local dx = edge[2].x - edge[1].x
-            local dy = edge[2].y - edge[1].y
+            local dx = edge.pos[2].x - edge.pos[1].x
+            local dy = edge.pos[2].y - edge.pos[1].y
             local length = math.sqrt(dx * dx + dy * dy)
             if visibility > 0.01 and length > 0.001 then
                 local half_width = state.divider_width * 0.5
                 local nx = -dy / length * half_width
                 local ny = dx / length * half_width
-                local a = vmath.vector3(edge[1].x + nx, edge[1].y + ny, state.divider_z)
-                local b = vmath.vector3(edge[2].x + nx, edge[2].y + ny, state.divider_z)
-                local c = vmath.vector3(edge[2].x - nx, edge[2].y - ny, state.divider_z)
-                local d = vmath.vector3(edge[1].x - nx, edge[1].y - ny, state.divider_z)
-                local color = state.divider_colors[region_index] or vmath.vector4(1, 1, 1, 1)
+                local a = vmath.vector3(edge.pos[1].x + nx, edge.pos[1].y + ny, state.divider_z)
+                local b = vmath.vector3(edge.pos[2].x + nx, edge.pos[2].y + ny, state.divider_z)
+                local c = vmath.vector3(edge.pos[2].x - nx, edge.pos[2].y - ny, state.divider_z)
+                local d = vmath.vector3(edge.pos[1].x - nx, edge.pos[1].y - ny, state.divider_z)
+                local color = state.divider_colors[site_index] or vmath.vector4(1, 1, 1, 1)
                 local faded = vmath.vector4(color.x, color.y, color.z, color.w * visibility)
                 add_colored_triangle(vertices, colors, a, b, c, faded)
                 add_colored_triangle(vertices, colors, a, c, d, faded)
@@ -326,13 +326,13 @@ function M.update(state, sites, dt, snap)
     end
 
     voronoi.generate(state.diagram, flattened_sites(state.diagram_sites))
-    for _, region in ipairs(voronoi.get_regions(state.diagram)) do
-        resource.set_buffer(state.mask_resources[region.index], make_mask_buffer(state, region))
+    for _, site in ipairs(voronoi.get_sites(state.diagram)) do
+        resource.set_buffer(state.mask_resources[site.index], make_mask_buffer(state, site))
     end
     local divider_buffer, divider_edge_count = make_divider_buffer(state)
     resource.set_buffer(state.divider_resource, divider_buffer)
     state.divider_edge_count = divider_edge_count
-    state.region_count = voronoi.get_num_regions(state.diagram)
+    state.site_count = voronoi.get_num_sites(state.diagram)
     update_cameras(state)
     return state
 end
@@ -353,8 +353,8 @@ function M.get_transition(state)
     return state.transition_ease
 end
 
-function M.get_region_count(state)
-    return state.region_count
+function M.get_site_count(state)
+    return state.site_count
 end
 
 function M.get_divider_edge_count(state)

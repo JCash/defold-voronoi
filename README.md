@@ -52,69 +52,82 @@ and ships editor completion metadata in `/voronoi/voronoi.script_api`.
 
 ## voronoi.create(width, height)
 
-Creates, and returns, a voronoi diagram context.
+Creates and returns a Voronoi diagram context with rectangular bounds.
 
     self.diagram = voronoi.create(800, 600)
 
 ## voronoi.destroy(diagram)
 
-Destroys a diagram context
+Destroys a diagram context. Do not use it afterward.
 
 ## voronoi.generate(diagram, points)
 
-Generates a 2D voronoi diagram from a set of 2D points
-The `points` variable is a table with numbers: `{ x1, y1, x2, y2, ... }`
+Generates a 2D Voronoi diagram from a flat coordinate array in the form
+`{ x1, y1, x2, y2, ... }`. Duplicate sites may be removed.
 
     local points = { 1.0, 1.5, 2.3, 3.1 }
-    voronoi.generate(self.diagram, points } 
+    voronoi.generate(self.diagram, points)
 
-After generating the diagram, retrieve the cells with `voronoi.get_regions()`
-or `voronoi.get_region()`.
+## voronoi.relax(diagram)
 
-## voronoi.get_num_regions(diagram)
+Moves the input points toward the averages of their cells and regenerates the
+diagram. Call repeatedly for additional relaxation passes.
 
-Returns the number of valid sites. Note that some sites might
-have been removed since they were duplicates.
+## voronoi.get_num_sites(diagram)
 
-## voronoi.get_region(diagram, index)
+Returns the number of unique generated sites. This may be smaller than the
+number of supplied points when duplicates were removed.
 
-Gets a site and it's information.
+## voronoi.get_sites(diagram) and voronoi.get_site(diagram, index)
 
-- `index` - the index of the site in the original set of points
+Returns all sites, or the site belonging to a 1-based original input index.
+Site tables mirror `jcv_site` and add cell geometry:
 
-- `x` - the x value of the site's position
+- `p` — site position as `{ x, y }`.
+- `index` — 1-based index in the original input points.
+- `boundary` — `true` when the cell touches the clipping boundary.
+- `edges` — counter-clockwise array of the site's edges.
+- `area` — signed cell area supplied as a Lua convenience.
 
-- `y` - the y value of the site's position
+Each edge table mirrors `jcv_edge`:
 
-- `area` - the area of the voronoi cell
+- `sites` — two 1-based input indices; `0` denotes the clipping boundary.
+- `pos` — two endpoint tables in the form `{ x, y }`.
+- `vertices` — two 1-based indices into `get_vertices()`; `0` means invalid.
 
-- `edges` - a list of the neighboring edges, where each edge is a table
-and contains:
+For edges returned as part of a site, `edge.sites[1]` is the current site and
+`edge.sites[2]` is its neighbor or `0` at the boundary.
 
--- '1' = `{ x, y }` - The first point of the edge
-
--- '2' = `{ x, y }` - The second point of the edge
-
--- 'neighbor' - the index of the neighbor in the original set of points
-
-
-Note that the edges are sorted, and are always rotated counter clockwise around the current site.
-
-Here is an example of how to iterate the generated diagram:
-
-    local num_regions = voronoi.get_num_regions(self.diagram)
-    for i=1,num_regions do
-        local site = voronoi.get_region(self.diagram, i)
-        for ei, edge in pairs(site.edges) do
-            if edge.neighbor > 0 then
-                ...
-            end
-        end
+```lua
+for _, site in ipairs(voronoi.get_sites(self.diagram)) do
+    for _, edge in ipairs(site.edges) do
+        local neighbor = edge.sites[2]
+        local from = edge.pos[1]
+        local to = edge.pos[2]
     end
+end
+```
+
+## voronoi.get_num_vertices(diagram) and voronoi.get_vertices(diagram)
+
+Returns the unique vertex count or the array of unique `{ x, y }` vertices.
+The indices in `edge.vertices` refer to this array.
+
+## voronoi.get_edges(diagram)
+
+Returns every diagram edge once, using the edge structure described above.
+
+## voronoi.get_delauney_edges(diagram)
+
+Returns the edges produced by `jcv_delauney_begin()` and
+`jcv_delauney_next()`. Each entry mirrors `jcv_delauney_edge` with `edge`,
+`sites`, and `pos` fields. The upstream library's `delauney` spelling is kept
+in the Lua API.
 
 ## voronoi.get_debug_image(diagram)
 
-Gets an rgb image showing the diagram. The image is a buffer with the signature `{hash("rgb"), buffer_VALUE_TYPE_UINT8, 3}`
+Gets an RGB image of the diagram. The result is a buffer with a `hash("rgb")`
+uint8 stream containing three components per pixel.
 
     self.textureheader = {width=self.width,
                         height=self.height,

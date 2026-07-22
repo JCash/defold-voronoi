@@ -138,7 +138,7 @@ local function publish_state(self)
             npc_2_y = self.sites[3].y,
             camera_groups = voronoi_split_screen.get_group_count(self.split_screen),
             transition = voronoi_split_screen.get_transition(self.split_screen),
-            voronoi_sites = voronoi_split_screen.get_region_count(self.split_screen),
+            voronoi_sites = voronoi_split_screen.get_site_count(self.split_screen),
             divider_edges = voronoi_split_screen.get_divider_edge_count(self.split_screen),
         })
     end

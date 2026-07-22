@@ -1,6 +1,6 @@
 - name: voronoi
   type: table
-  desc: Creates bounded two-dimensional Voronoi diagrams and exposes their regions, edges, and debug image.
+  desc: Creates bounded two-dimensional Voronoi diagrams using jc_voronoi 0.10.0.
 
   members:
   - name: create
@@ -32,7 +32,7 @@
 
   - name: generate
     type: function
-    desc: Replaces the diagram with regions generated from a flat list of x/y site coordinates. Duplicate sites may be removed.
+    desc: Replaces the diagram with sites generated from a flat list of x/y coordinates. Duplicate sites may be removed.
     parameters:
     - name: diagram
       type: userdata
@@ -43,23 +43,33 @@
     examples:
     - desc: voronoi.generate(diagram, { 100, 100, 400, 300, 700, 500 })
 
-  - name: get_regions
+  - name: relax
     type: function
-    desc: Returns every generated region. Each region contains index, x, y, area, and an ordered edges array. Each edge contains points at indices 1 and 2 plus a 1-based neighbor index, or 0 at the diagram boundary.
+    desc: Moves every input point toward the average of its site and cell vertices, then regenerates the diagram.
+    parameters:
+    - name: diagram
+      type: userdata
+      desc: Generated diagram context.
+    examples:
+    - desc: voronoi.relax(diagram)
+
+  - name: get_sites
+    type: function
+    desc: Returns every generated site. A site contains p, index, boundary, edges, and the convenience field area. The p field is { x, y }; index is the 1-based original input index; boundary reports whether the cell touches the clipping boundary; and edges contains counter-clockwise edge tables.
     parameters:
     - name: diagram
       type: userdata
       desc: Generated diagram context.
     returns:
-    - name: regions
+    - name: sites
       type: table
-      desc: Array of region tables, indexed from 1.
+      desc: Array of site tables.
     examples:
-    - desc: for _, region in ipairs(voronoi.get_regions(diagram)) do pprint(region) end
+    - desc: for _, site in ipairs(voronoi.get_sites(diagram)) do pprint(site) end
 
-  - name: get_num_regions
+  - name: get_num_sites
     type: function
-    desc: Returns the number of valid regions in the generated diagram. This may be smaller than the supplied site count when sites were duplicates.
+    desc: Returns diagram.numsites, the number of unique generated sites. This may be smaller than the input count when points are duplicated.
     parameters:
     - name: diagram
       type: userdata
@@ -67,24 +77,72 @@
     returns:
     - name: count
       type: number
-      desc: Number of generated regions.
+      desc: Number of unique generated sites.
 
-  - name: get_region
+  - name: get_site
     type: function
-    desc: Returns one generated region with index, x, y, area, and ordered edges. Each edge contains points at indices 1 and 2 plus a 1-based neighbor index, or 0 at the diagram boundary.
+    desc: Returns the generated site for a 1-based original input index. The site has the same fields as entries returned by get_sites().
     parameters:
     - name: diagram
       type: userdata
       desc: Generated diagram context.
     - name: index
       type: number
-      desc: 1-based original site index.
+      desc: 1-based original input point index.
     returns:
-    - name: region
+    - name: site
       type: table
-      desc: Region table for the requested site.
+      desc: Site table for the requested input point.
     examples:
-    - desc: local region = voronoi.get_region(diagram, 1)
+    - desc: local site = voronoi.get_site(diagram, 1)
+
+  - name: get_num_vertices
+    type: function
+    desc: Returns diagram.numvertices, the number of unique Voronoi vertices.
+    parameters:
+    - name: diagram
+      type: userdata
+      desc: Generated diagram context.
+    returns:
+    - name: count
+      type: number
+      desc: Number of unique vertices.
+
+  - name: get_vertices
+    type: function
+    desc: Returns all unique Voronoi vertices as { x, y } point tables. Edge vertex indices refer to this array.
+    parameters:
+    - name: diagram
+      type: userdata
+      desc: Generated diagram context.
+    returns:
+    - name: vertices
+      type: table
+      desc: Array of point tables.
+
+  - name: get_edges
+    type: function
+    desc: Returns every diagram edge. Each edge contains sites, pos, and vertices. sites contains two 1-based input indices, with 0 denoting the clipping boundary. pos contains two { x, y } endpoints. vertices contains two 1-based indices into get_vertices(), with 0 denoting an invalid endpoint.
+    parameters:
+    - name: diagram
+      type: userdata
+      desc: Generated diagram context.
+    returns:
+    - name: edges
+      type: table
+      desc: Array of edge tables.
+
+  - name: get_delauney_edges
+    type: function
+    desc: Returns the Delauney edges produced by the upstream jcv_delauney iterator. Each entry contains edge, sites, and pos fields matching jcv_delauney_edge. The upstream spelling "delauney" is preserved in the Lua function name.
+    parameters:
+    - name: diagram
+      type: userdata
+      desc: Generated diagram context.
+    returns:
+    - name: edges
+      type: table
+      desc: Array of Delauney edge tables.
 
   - name: get_debug_image
     type: function

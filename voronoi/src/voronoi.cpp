@@ -37,12 +37,12 @@ struct VoronoiContext
 
 static VoronoiContext* CheckVoronoiDiagram(lua_State* L, int index)
 {
-    if( !lua_isuserdata(L, 1) )
+    if( !lua_isuserdata(L, index) )
     {
-        luaL_typerror(L, 1, "diagram");
+        luaL_typerror(L, index, "diagram");
         return 0;
     }
-    return (VoronoiContext*)lua_touserdata(L, 1);
+    return (VoronoiContext*)lua_touserdata(L, index);
 }
 
 static int Create(lua_State* L)
@@ -141,6 +141,10 @@ static int Relax(lua_State* L)
     DM_LUA_STACK_CHECK(L, 0);
 
     VoronoiContext* ctx = CheckVoronoiDiagram(L, 1);
+    if( !ctx->m_Diagram.internal )
+    {
+        return luaL_error(L, "Generate the diagram before relaxing it");
+    }
 
     jcv_point* points = ctx->m_Points;
     const jcv_site* sites = jcv_diagram_get_sites(&ctx->m_Diagram);
@@ -165,19 +169,70 @@ static int Relax(lua_State* L)
         points[site->index].y = sum.y / count;
     }
 
+    jcv_rect rect = {(jcv_real)0, (jcv_real)0, (jcv_real)ctx->m_Width, (jcv_real)ctx->m_Height};
+    jcv_diagram_generate(ctx->m_NumPoints, ctx->m_Points, &rect, 0, &ctx->m_Diagram);
+
     return 0;
 }
 
-static int PushRegion(lua_State* L, const jcv_diagram* diagram, const jcv_site* site)
+static void PushPoint(lua_State* L, const jcv_point* point)
+{
+    lua_newtable(L);
+    lua_pushnumber(L, point->x);
+    lua_setfield(L, -2, "x");
+    lua_pushnumber(L, point->y);
+    lua_setfield(L, -2, "y");
+}
+
+static void PushSiteIndex(lua_State* L, const jcv_site* site)
+{
+    // jc_voronoi uses zero-based indices and null for a clipping boundary.
+    // Lua callers use one-based indices and 0 for a boundary.
+    lua_pushinteger(L, site ? site->index + 1 : 0);
+}
+
+static void PushEdge(lua_State* L, const jcv_edge* edge)
 {
     lua_newtable(L);
 
-    lua_pushnumber(L, site->p.x);
-    lua_setfield(L, -2, "x");
-    lua_pushnumber(L, site->p.y);
-    lua_setfield(L, -2, "y");
+    lua_pushstring(L, "sites");
+    lua_newtable(L);
+    for( int i = 0; i < 2; ++i )
+    {
+        PushSiteIndex(L, edge->sites[i]);
+        lua_rawseti(L, -2, i + 1);
+    }
+    lua_settable(L, -3);
+
+    lua_pushstring(L, "pos");
+    lua_newtable(L);
+    for( int i = 0; i < 2; ++i )
+    {
+        PushPoint(L, &edge->pos[i]);
+        lua_rawseti(L, -2, i + 1);
+    }
+    lua_settable(L, -3);
+
+    lua_pushstring(L, "vertices");
+    lua_newtable(L);
+    for( int i = 0; i < 2; ++i )
+    {
+        lua_pushinteger(L, edge->vertices[i] == JCV_INVALID_VERTEX ? 0 : edge->vertices[i] + 1);
+        lua_rawseti(L, -2, i + 1);
+    }
+    lua_settable(L, -3);
+}
+
+static int PushSite(lua_State* L, const jcv_diagram* diagram, const jcv_site* site)
+{
+    lua_newtable(L);
+
+    PushPoint(L, &site->p);
+    lua_setfield(L, -2, "p");
     lua_pushinteger(L, site->index+1);
     lua_setfield(L, -2, "index");
+    lua_pushboolean(L, site->boundary != 0);
+    lua_setfield(L, -2, "boundary");
 
     lua_pushstring(L, "edges");
     lua_newtable(L);
@@ -189,28 +244,10 @@ static int PushRegion(lua_State* L, const jcv_diagram* diagram, const jcv_site* 
     jcv_site_get_edges(diagram, site, &iter);
     while( jcv_edge_next(&iter, &edge) )
     {
-        lua_pushnumber(L, ++edgeindex);
-        lua_newtable(L);
-
-        for( int i = 0; i < 2; ++i )
-        {
-            lua_pushnumber(L, i+1);
-            lua_newtable(L);
-
-            lua_pushnumber(L, edge.pos[i].x);
-            lua_setfield(L, -2, "x");
-            lua_pushnumber(L, edge.pos[i].y);
-            lua_setfield(L, -2, "y");
-
-            lua_settable(L, -3);
-        }
+        PushEdge(L, &edge);
+        lua_rawseti(L, -2, ++edgeindex);
 
         area += edge.pos[0].x * edge.pos[1].y - edge.pos[0].y * edge.pos[1].x;
-
-        lua_pushinteger(L, edge.sites[1] ? edge.sites[1]->index+1 : 0);
-        lua_setfield(L, -2, "neighbor");
-
-        lua_settable(L, -3);
     }
 
     lua_settable(L, -3);
@@ -221,7 +258,7 @@ static int PushRegion(lua_State* L, const jcv_diagram* diagram, const jcv_site* 
     return 1;
 }
 
-static int GetRegion(lua_State* L)
+static int GetSite(lua_State* L)
 {
     DM_LUA_STACK_CHECK(L, 1);
 
@@ -246,28 +283,137 @@ static int GetRegion(lua_State* L)
     }
     if(!site)
     {
-        return luaL_error(L, "No region exists for point index '%d'", index);
+        return luaL_error(L, "No site exists for point index '%d'", index);
     }
 
-    PushRegion(L, &ctx->m_Diagram, site);
+    PushSite(L, &ctx->m_Diagram, site);
     return 1;
 }
 
-static int GetRegions(lua_State* L)
+static int GetSites(lua_State* L)
 {
     DM_LUA_STACK_CHECK(L, 1);
 
     VoronoiContext* ctx = CheckVoronoiDiagram(L, 1);
 
     lua_newtable(L);
+    if( ctx->m_Diagram.numsites == 0 )
+    {
+        return 1;
+    }
 
     const jcv_site* sites = jcv_diagram_get_sites( &ctx->m_Diagram );
     for( int i = 0; i < ctx->m_Diagram.numsites; ++i )
     {
-        PushRegion(L, &ctx->m_Diagram, &sites[i]);
+        PushSite(L, &ctx->m_Diagram, &sites[i]);
         lua_rawseti(L, -2, i+1);
     }
 
+    return 1;
+}
+
+static int GetNumSites(lua_State* L)
+{
+    DM_LUA_STACK_CHECK(L, 1);
+    VoronoiContext* ctx = CheckVoronoiDiagram(L, 1);
+    lua_pushinteger(L, ctx->m_Diagram.numsites);
+    return 1;
+}
+
+static int GetNumVertices(lua_State* L)
+{
+    DM_LUA_STACK_CHECK(L, 1);
+    VoronoiContext* ctx = CheckVoronoiDiagram(L, 1);
+    lua_pushinteger(L, jcv_get_num_vertices(&ctx->m_Diagram));
+    return 1;
+}
+
+static int GetVertices(lua_State* L)
+{
+    DM_LUA_STACK_CHECK(L, 1);
+    VoronoiContext* ctx = CheckVoronoiDiagram(L, 1);
+    const int count = jcv_get_num_vertices(&ctx->m_Diagram);
+
+    lua_newtable(L);
+    if( count == 0 )
+    {
+        return 1;
+    }
+
+    jcv_point* vertices = (jcv_point*)malloc(sizeof(jcv_point) * count);
+    jcv_diagram_get_vertices(&ctx->m_Diagram, vertices);
+    for( int i = 0; i < count; ++i )
+    {
+        PushPoint(L, &vertices[i]);
+        lua_rawseti(L, -2, i + 1);
+    }
+    free(vertices);
+    return 1;
+}
+
+static int GetEdges(lua_State* L)
+{
+    DM_LUA_STACK_CHECK(L, 1);
+    VoronoiContext* ctx = CheckVoronoiDiagram(L, 1);
+
+    lua_newtable(L);
+    if( !ctx->m_Diagram.internal )
+    {
+        return 1;
+    }
+    int index = 0;
+    jcv_edge_iter iter;
+    jcv_edge edge;
+    jcv_diagram_get_edges(&ctx->m_Diagram, &iter);
+    while( jcv_edge_next(&iter, &edge) )
+    {
+        PushEdge(L, &edge);
+        lua_rawseti(L, -2, ++index);
+    }
+    return 1;
+}
+
+static int GetDelauneyEdges(lua_State* L)
+{
+    DM_LUA_STACK_CHECK(L, 1);
+    VoronoiContext* ctx = CheckVoronoiDiagram(L, 1);
+
+    lua_newtable(L);
+    if( !ctx->m_Diagram.internal )
+    {
+        return 1;
+    }
+    int index = 0;
+    jcv_delauney_iter iter;
+    jcv_delauney_edge delauney_edge;
+    jcv_delauney_begin(&ctx->m_Diagram, &iter);
+    while( jcv_delauney_next(&iter, &delauney_edge) )
+    {
+        lua_newtable(L);
+
+        PushEdge(L, &delauney_edge.edge);
+        lua_setfield(L, -2, "edge");
+
+        lua_pushstring(L, "sites");
+        lua_newtable(L);
+        for( int i = 0; i < 2; ++i )
+        {
+            PushSiteIndex(L, delauney_edge.sites[i]);
+            lua_rawseti(L, -2, i + 1);
+        }
+        lua_settable(L, -3);
+
+        lua_pushstring(L, "pos");
+        lua_newtable(L);
+        for( int i = 0; i < 2; ++i )
+        {
+            PushPoint(L, &delauney_edge.pos[i]);
+            lua_rawseti(L, -2, i + 1);
+        }
+        lua_settable(L, -3);
+
+        lua_rawseti(L, -2, ++index);
+    }
     return 1;
 }
 
@@ -296,18 +442,10 @@ static void DrawCells(const jcv_diagram* diagram, uint8_t* image, int width, int
     }
 }
 
-static int GetNumRegions(lua_State* L)
-{
-    DM_LUA_STACK_CHECK(L, 1);
-    VoronoiContext* ctx = (VoronoiContext*)lua_touserdata(L, 1);
-    lua_pushinteger(L, ctx->m_NumPoints);
-    return 1;
-}
-
 static int GetDebugImage(lua_State* L)
 {
     DM_LUA_STACK_CHECK(L, 1);
-    VoronoiContext* ctx = (VoronoiContext*)lua_touserdata(L, 1);
+    VoronoiContext* ctx = CheckVoronoiDiagram(L, 1);
 
     if( ctx->m_NumPoints == 0 )
     {
@@ -350,10 +488,14 @@ static const luaL_reg Module_methods[] =
     {"destroy", Destroy},
     {"generate", Generate},
 
-    //{"relax", Relax},
-    {"get_regions", GetRegions},
-    {"get_num_regions", GetNumRegions},
-    {"get_region", GetRegion},
+    {"relax", Relax},
+    {"get_sites", GetSites},
+    {"get_num_sites", GetNumSites},
+    {"get_site", GetSite},
+    {"get_num_vertices", GetNumVertices},
+    {"get_vertices", GetVertices},
+    {"get_edges", GetEdges},
+    {"get_delauney_edges", GetDelauneyEdges},
     {"get_debug_image", GetDebugImage},
     {0, 0}
 };
